@@ -32,10 +32,14 @@ services:
       start_period: 10s
 
   cloudbridge:
+    # `image` points at the tag the GitHub Action publishes on every push to
+    # main, so `docker compose pull` fetches a prebuilt image instead of
+    # rebuilding. `build` stays as a local fallback: `docker compose build`
+    # (or `up --build`) still works for development without a registry.
+    image: ghcr.io/gilberth/cloudbridge:latest
     build:
       context: .
       dockerfile: Dockerfile
-    image: cloudbridge:latest
     container_name: cloudbridge
     restart: unless-stopped
     depends_on:
