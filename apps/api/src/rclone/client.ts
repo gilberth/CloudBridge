@@ -233,7 +233,15 @@ export class RcloneClient {
   // ---------------------------------------------------------- operations ---
 
   async list(fs: string, remote: string, opt: ListOptions = {}): Promise<RcListItem[]> {
-    const result = await this.call<RcListResult>('operations/list', { fs, remote, opt });
+    // A single-level listing is usually instant, but a cold OAuth token
+    // refresh or a directory with thousands of entries (a large Team Drive,
+    // an S3 bucket root, …) can take well past the generic call timeout.
+    // Give it the same headroom as `size` instead of the global default.
+    const result = await this.call<RcListResult>(
+      'operations/list',
+      { fs, remote, opt },
+      { timeoutMs: 120_000 },
+    );
     return result.list ?? [];
   }
 
