@@ -8,7 +8,7 @@ import type {
 } from '@cloudbridge/shared';
 import { DEFAULT_TRANSFER_OPTIONS } from '@cloudbridge/shared';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
-import { joinPath, sanitizeName, sanitizePath } from '../lib/path.js';
+import { sanitizeName, sanitizePath } from '../lib/path.js';
 import { buildConfig, buildFilter, syncEndpointFor } from '../rclone/options.js';
 import { fsPath, serverSideOptions, type BackendOptions } from '../rclone/fsstring.js';
 import { RcloneError, RcloneUnavailableError } from '../rclone/client.js';
@@ -215,9 +215,13 @@ export class TransferService {
         ];
         const call = { group, config } as const;
         for (const item of items) {
-          const name = sanitizeName(item.name);
-          const srcRemote = joinPath(source.path, name);
-          const dstRemote = joinPath(destination.path, name);
+          // `srcFs`/`dstFs` above already bake `source.path`/`destination.path`
+          // in as the fs root (via `fsPath`), so `srcRemote`/`dstRemote` here
+          // must be just the leaf name — joining the parent path in *again*
+          // duplicates it (`.../01 - Intro/01 - Intro/file`) and rclone
+          // reports that nonexistent nested path as "object not found".
+          const srcRemote = sanitizeName(item.name);
+          const dstRemote = sanitizeName(item.name);
           const { jobid, error } = await this.copyOrMoveFileWithRetry(
             mode,
             candidates,
