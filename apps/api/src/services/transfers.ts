@@ -185,6 +185,13 @@ export class TransferService {
     // Copy/move those directly by path instead; only `sync` (which needs a
     // real tree diff for deleteOnDst) and selections containing a directory
     // still go through the filtered sync/copy path below.
+    //
+    // That same lookup is also just plain flaky for those items: the exact
+    // same operations/copyfile call against the exact same path fails with a
+    // 404 one moment and succeeds the next — reproduced repeatedly (5/5
+    // retries succeeded right after a call had just failed). So on a 404
+    // "File not found", retry the single-file copy/move a few times before
+    // giving up — a fresh attempt has a good chance of landing on a valid ID.
     const onlyFiles = items.length > 0 && items.every((item) => !item.isDir);
     if (onlyFiles && (mode === 'copy' || mode === 'move')) {
       for (const destination of destinations) {
@@ -196,11 +203,16 @@ export class TransferService {
           const name = sanitizeName(item.name);
           const srcRemote = joinPath(source.path, name);
           const dstRemote = joinPath(destination.path, name);
-          jobIds.push(
-            mode === 'move'
-              ? await this.rclone.moveFile(srcFs, srcRemote, dstFs, dstRemote, call)
-              : await this.rclone.copyFile(srcFs, srcRemote, dstFs, dstRemote, call),
-          );
+          try {
+            jobIds.push(
+              await this.copyOrMoveFileWithRetry(mode, srcFs, srcRemote, dstFs, dstRemote, call),
+            );
+          } catch (error) {
+            if (!options.ignoreErrors) throw error;
+            // Counted via rclone's own core/stats for this group already
+            // (the failed attempt still ran through rclone's accounting) —
+            // skip to the next item instead of aborting the whole selection.
+          }
         }
       }
       return jobIds;
@@ -240,6 +252,56 @@ export class TransferService {
     }
 
     return jobIds;
+  }
+
+  /**
+   * `operations/copyfile`/`operations/movefile`, retried on the specific
+   * "File not found" 404 that some legacy/Google-Photos-backed Drive items
+   * throw intermittently — same path, same call, sometimes 404s and
+   * sometimes doesn't. Any other error is not retried.
+   */
+  private async copyOrMoveFileWithRetry(
+    mode: 'copy' | 'move',
+    srcFs: string,
+    srcRemote: string,
+    dstFs: string,
+    dstRemote: string,
+    call: { group: string; config: Record<string, unknown> },
+  ): Promise<number> {
+    const endpoint = mode === 'move' ? 'operations/movefile' : 'operations/copyfile';
+    const params = { srcFs, srcRemote, dstFs, dstRemote };
+    const attempts = 3;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const jobid = await this.rclone.callAsync(endpoint, params, call);
+      try {
+        await this.waitForJob(jobid, endpoint);
+        return jobid;
+      } catch (error) {
+        const retryable =
+          error instanceof RcloneError && /file not found/i.test(error.message) && attempt < attempts;
+        if (!retryable) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+      }
+    }
+    throw new Error('unreachable');
+  }
+
+  /** Poll `job/status` until an already-launched job finishes. */
+  private async waitForJob(jobid: number, endpoint: string): Promise<void> {
+    const deadline = Date.now() + 5 * 60_000;
+    while (Date.now() < deadline) {
+      const status = await this.rclone.call<{ finished: boolean; success: boolean; error: string }>(
+        'job/status',
+        { jobid },
+        { timeoutMs: 10_000 },
+      );
+      if (status.finished) {
+        if (!status.success) throw new RcloneError(endpoint, 200, status.error || `${endpoint} falló`, status);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new RcloneUnavailableError(endpoint, `${endpoint} no terminó a tiempo`);
   }
 
   private describe(destinations: RemotePath[]): string {
