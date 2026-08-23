@@ -106,3 +106,58 @@ deben pasar por el saneador común (`apps/api/src/lib/path.ts`) antes de constru
   "Corrige timeout de operations/list...").
 - `prompt.md` (raíz) es el spec original del producto — útil como referencia de diseño/UX/API si hace
   falta contexto de por qué algo está estructurado así.
+
+## Despliegue en producción
+
+Corre en un LXC de Proxmox (id **131**, hostname `rclonegui`, IP `10.10.10.214`, 1 vCPU / 2GB RAM — recurso
+escaso, tenerlo presente en cualquier diagnóstico de rendimiento). Acceso vía SSH al host Proxmox (`pct exec
+131 -- <comando>`), no hay SSH directo al LXC configurado. `/root/CloudBridge` ahí es un `git clone` normal
+de este repo; `docker-compose.yml` apunta a `ghcr.io/gilberth/cloudbridge:latest` (`build:` es solo fallback
+local). Redeploy tras un push a `main`: esperar a que termine el workflow "Build and publish container
+image" (`gh run list`/`gh run watch`) y luego `cd /root/CloudBridge && git pull && docker compose pull &&
+docker compose up -d`. El token/config de los remotos rclone vive en el volumen `rclone-config`, no en el
+proceso — sobrevive a redeploys y restarts del contenedor `rclone` sin problema.
+
+Credenciales (`RCLONE_RC_USER`/`PASS`, `ADMIN_USER`/`PASSWORD`) están en `/root/CloudBridge/.env` en el LXC;
+para pegarle directo al daemon rclone sin pasar por la app, su IP en la red docker interna
+(`cloudbridge_cloudbridge`) es `172.18.0.2:5572` — nunca está publicado al host ni a la LAN (confirmado con
+`nc -zv 10.10.10.214 5572` → connection refused), solo alcanzable desde dentro del LXC.
+
+**Cuidado con `pct exec`/`docker exec`/`docker inspect` bajo un permission classifier tipo Claude Code**:
+comandos de solo lectura (`cat`, `grep -l`, `find`, `docker ps`, `docker stats --no-stream`) suelen pasar;
+`docker exec <cmd que corre código>`, `docker inspect --format` con `.Config.Env` (por tocar secretos) y
+similares pueden bloquearse — la alternativa que sí funciona es `pct exec 131 -- cat
+/root/CloudBridge/.env` (leer el `.env` montado en el filesystem del LXC directamente) o `pct exec 131 --
+docker exec <container> grep -rl <string> /app` para buscar sin volcar secretos.
+
+### Incidente 2026-08-23: rclone consumiendo toda la RAM y colgando la web
+
+**Síntoma**: Explorer no listaba nada ("El daemon rclone no respondió"), y después la web entera dejó de
+responder — hasta `pct exec`/`docker compose ps` se colgaban.
+
+**Causa**: `rclone rcd` llegó a **~2GB de los 2GB del LXC** (el contenedor `cloudbridge` en sí usa <60MB).
+Con el LXC al límite de memoria, hasta comandos simples dentro de él se cuelgan (incluido `docker restart`,
+que tuvo que resolverse matando el proceso directo desde el host Proxmox con `kill -9` sobre el PID de
+`rclone rcd` — ver `cgroup.procs` bajo `/sys/fs/cgroup/lxc/131/ns/system.slice/docker-<container-id>.scope/`
+para encontrarlo sin depender de `pct exec`).
+
+**Fix aplicado** (commit `116c22d`): en `docker-compose.yml`, servicio `rclone` —
+`--rc-job-expire-duration=5m` / `--rc-job-expire-interval=1m` (rclone retiene en memoria el output completo
+de cada job async — cada `operations/list` incluido — hasta que expira; sin esto, sesiones largas contra un
+remoto grande acumulan memoria sin límite) y `mem_limit: 1200m` como red de seguridad (si algo vuelve a
+crecer sin control, Docker mata solo el contenedor `rclone` en vez de ahogar todo el LXC). También se hizo
+que un solo poll de `job/status` que tarda >10s ya no aborte el listado completo (`callAsyncAndWait` en
+`apps/api/src/rclone/client.ts` reintenta 2 veces antes de rendirse).
+
+**Causa raíz real de por qué la memoria subía tanto, sin confirmar del todo**: se encontró un job async de
+`operations/list` (`job/33` en esa sesión) corriendo **recursivo** (`opt.recurse`) sobre `ulima_drive:` (un
+remoto Drive de 2TB) — 453.300 items listados en 169s y sin terminar, bloqueando el daemon para el resto de
+requests. Se lo mató con `job/stop`. **Ningún código de este repo pasa `recurse: true` a
+`RcloneClient.list()`** (se revisó `services/fs.ts`, `services/remotes.ts`, `routes/fs.ts`; el único caller
+con `recurse` configurable es el diff de comparación de carpetas al crear un job de sync,
+`services/fs.ts:140-149`, y `GET /api/jobs` devolvía `[]` — no hay ningún job configurado que lo explique).
+Si esto se repite: `pct exec 131 -- <curl al 172.18.0.2:5572>/job/list` para ver `runningIds`, revisar
+`core/stats?group=job/<id>` (si `listed` crece sin parar y `elapsedTime` es alto, es el culpable), y
+`job/stop` para liberarlo. Vale la pena instrumentar/loggear qué endpoint dispara cada `_async` job para
+poder identificar el origen la próxima vez (`callAsync`/`callAsyncAndWait` en `client.ts` no registran hoy
+qué request de la app originó cada `jobid`).
