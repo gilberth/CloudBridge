@@ -186,18 +186,33 @@ export class TransferService {
     // real tree diff for deleteOnDst) and selections containing a directory
     // still go through the filtered sync/copy path below.
     //
-    // That same lookup is also just plain flaky for those items: the exact
-    // same operations/copyfile call against the exact same path fails with a
-    // 404 one moment and succeeds the next — reproduced repeatedly (5/5
-    // retries succeeded right after a call had just failed). So on a 404
-    // "File not found", retry the single-file copy/move a few times before
-    // giving up — a fresh attempt has a good chance of landing on a valid ID.
+    // Some legacy Drive items (old v2-API-style IDs) 404 specifically on
+    // Google's server-side copy (`files.copy`) — deterministically, every
+    // time — while a normal download+reupload of the exact same ID always
+    // succeeds. Reproduced: 3/3 failures with `server_side_across_configs`
+    // on, 3/3 successes with it off, same file, same ID. So when the
+    // server-side attempt 404s "File not found", fall back to a plain
+    // (non-server-side) copy/move of just that file instead of giving up.
     const onlyFiles = items.length > 0 && items.every((item) => !item.isDir);
     if (onlyFiles && (mode === 'copy' || mode === 'move')) {
       for (const destination of destinations) {
         const backends = await this.backendOptions(source, destination);
-        const srcFs = fsPath(source.remote, source.path, backends.src);
-        const dstFs = fsPath(destination.remote, destination.path, backends.dst);
+        const candidates = [
+          {
+            srcFs: fsPath(source.remote, source.path, backends.src),
+            dstFs: fsPath(destination.remote, destination.path, backends.dst),
+          },
+          // Only a distinct fallback when server-side options were actually
+          // applied above; otherwise it's the same call twice.
+          ...(backends.src || backends.dst
+            ? [
+                {
+                  srcFs: fsPath(source.remote, source.path),
+                  dstFs: fsPath(destination.remote, destination.path),
+                },
+              ]
+            : []),
+        ];
         const call = { group, config } as const;
         for (const item of items) {
           const name = sanitizeName(item.name);
@@ -205,9 +220,8 @@ export class TransferService {
           const dstRemote = joinPath(destination.path, name);
           const { jobid, error } = await this.copyOrMoveFileWithRetry(
             mode,
-            srcFs,
+            candidates,
             srcRemote,
-            dstFs,
             dstRemote,
             call,
           );
@@ -259,36 +273,43 @@ export class TransferService {
   }
 
   /**
-   * `operations/copyfile`/`operations/movefile`, retried on the specific
-   * "File not found" 404 that some legacy/Google-Photos-backed Drive items
-   * throw intermittently — same path, same call, sometimes 404s and
-   * sometimes doesn't. Any other error is not retried.
+   * `operations/copyfile`/`operations/movefile` against each `{srcFs,dstFs}`
+   * candidate in order (server-side first, plain download+reupload as
+   * fallback — see the comment at the call site) until one succeeds. A
+   * "File not found" 404 moves on to the next candidate, or retries the same
+   * one with a short backoff if there isn't one; any other error stops
+   * immediately.
    */
   private async copyOrMoveFileWithRetry(
     mode: 'copy' | 'move',
-    srcFs: string,
+    candidates: Array<{ srcFs: string; dstFs: string }>,
     srcRemote: string,
-    dstFs: string,
     dstRemote: string,
     call: { group: string; config: Record<string, unknown> },
   ): Promise<{ jobid: number; error?: RcloneError | RcloneUnavailableError }> {
     const endpoint = mode === 'move' ? 'operations/movefile' : 'operations/copyfile';
-    const params = { srcFs, srcRemote, dstFs, dstRemote };
-    const attempts = 3;
+    const attemptsPerCandidate = candidates.length > 1 ? 1 : 3;
     let jobid = -1;
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      jobid = await this.rclone.callAsync(endpoint, params, call);
-      try {
-        await this.waitForJob(jobid, endpoint);
-        return { jobid };
-      } catch (error) {
-        const retryable =
-          error instanceof RcloneError && /file not found/i.test(error.message) && attempt < attempts;
-        if (!retryable) return { jobid, error: error as RcloneError | RcloneUnavailableError };
-        await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    let lastError: RcloneError | RcloneUnavailableError | undefined;
+
+    for (const { srcFs, dstFs } of candidates) {
+      const params = { srcFs, srcRemote, dstFs, dstRemote };
+      for (let attempt = 1; attempt <= attemptsPerCandidate; attempt++) {
+        jobid = await this.rclone.callAsync(endpoint, params, call);
+        try {
+          await this.waitForJob(jobid, endpoint);
+          return { jobid };
+        } catch (error) {
+          lastError = error as RcloneError | RcloneUnavailableError;
+          const notFound = error instanceof RcloneError && /file not found/i.test(error.message);
+          if (!notFound) return { jobid, error: lastError };
+          if (attempt < attemptsPerCandidate) {
+            await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+          }
+        }
       }
     }
-    return { jobid };
+    return { jobid, error: lastError };
   }
 
   /** Poll `job/status` until an already-launched job finishes. */
