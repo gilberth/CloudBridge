@@ -8,7 +8,7 @@ import type {
 } from '@cloudbridge/shared';
 import { DEFAULT_TRANSFER_OPTIONS } from '@cloudbridge/shared';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
-import { sanitizeName, sanitizePath } from '../lib/path.js';
+import { joinPath, sanitizeName, sanitizePath } from '../lib/path.js';
 import { buildConfig, buildFilter, syncEndpointFor } from '../rclone/options.js';
 import { fsPath, serverSideOptions, type BackendOptions } from '../rclone/fsstring.js';
 import { RcloneError, RcloneUnavailableError } from '../rclone/client.js';
@@ -175,6 +175,36 @@ export class TransferService {
     const defaults = this.app.settings.transferDefaults();
     const config = buildConfig(options, defaults);
     const jobIds: number[] = [];
+
+    // A selection of only files (no directories) doesn't need a directory
+    // sync at all: `sync/copy`+`--include` still walks and lists the whole
+    // source tree to apply the filter, which re-resolves every item's ID —
+    // for a handful of legacy/"Google Photos in Drive" items that ID can
+    // come back different from what a direct path lookup gives, causing a
+    // spurious 404 even though the file is perfectly copyable on its own.
+    // Copy/move those directly by path instead; only `sync` (which needs a
+    // real tree diff for deleteOnDst) and selections containing a directory
+    // still go through the filtered sync/copy path below.
+    const onlyFiles = items.length > 0 && items.every((item) => !item.isDir);
+    if (onlyFiles && (mode === 'copy' || mode === 'move')) {
+      for (const destination of destinations) {
+        const backends = await this.backendOptions(source, destination);
+        const srcFs = fsPath(source.remote, source.path, backends.src);
+        const dstFs = fsPath(destination.remote, destination.path, backends.dst);
+        const call = { group, config } as const;
+        for (const item of items) {
+          const name = sanitizeName(item.name);
+          const srcRemote = joinPath(source.path, name);
+          const dstRemote = joinPath(destination.path, name);
+          jobIds.push(
+            mode === 'move'
+              ? await this.rclone.moveFile(srcFs, srcRemote, dstFs, dstRemote, call)
+              : await this.rclone.copyFile(srcFs, srcRemote, dstFs, dstRemote, call),
+          );
+        }
+      }
+      return jobIds;
+    }
 
     for (const destination of destinations) {
       const backends = await this.backendOptions(source, destination);
