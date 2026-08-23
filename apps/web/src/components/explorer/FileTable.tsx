@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -148,6 +148,13 @@ export function FileTable({
     [entries, selected, allSelected, someSelected, onSelectionChange, onContextMenu],
   );
 
+  // The row is also a dnd-kit draggable (`DraggableRow` below), whose pointer
+  // listeners intercept the click sequence closely enough that the browser
+  // doesn't reliably synthesize a native `dblclick` on it — the second click
+  // just lands as another single click. Detect the double-click ourselves
+  // from click timing/target instead of relying on `onDoubleClick`.
+  const lastClickRef = useRef<{ name: string; time: number } | null>(null);
+
   const table = useReactTable({
     data: entries,
     columns,
@@ -193,6 +200,15 @@ export function FileTable({
             compareClass={row.original.compare ? COMPARE_STYLES[row.original.compare] : undefined}
             onDragStart={onDragStart}
             onClick={(event) => {
+              const name = row.original.name;
+              const now = Date.now();
+              const last = lastClickRef.current;
+              lastClickRef.current = { name, time: now };
+              if (last && last.name === name && now - last.time < 400) {
+                lastClickRef.current = null;
+                onOpen(row.original);
+                return;
+              }
               if (event.shiftKey || event.ctrlKey || event.metaKey) {
                 handleRangeClick(event, row.index, entries, selected, onSelectionChange);
               } else {
