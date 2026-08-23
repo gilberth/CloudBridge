@@ -5,7 +5,7 @@ import type { Db } from './index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** Folder holding the SQL produced by `npm run db:generate`. */
+/** Folder holding the SQL produced by `pnpm run db:generate`. */
 export const migrationsFolder = join(here, '..', '..', 'drizzle');
 
 export function runMigrations(db: Db): void {

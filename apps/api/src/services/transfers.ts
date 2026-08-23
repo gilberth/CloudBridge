@@ -241,9 +241,12 @@ export class TransferService {
     }
 
     for (const destination of destinations) {
-      const backends = await this.backendOptions(source, destination);
-      const srcFs = fsPath(source.remote, source.path, backends.src);
-      const dstFs = fsPath(destination.remote, destination.path, backends.dst);
+      // Directory jobs remain asynchronous, so they cannot safely retry after
+      // a server-side 404 without persisting and relaunching the whole job.
+      // Keep rclone's normal transfer path here. Cross-config server-side copy
+      // is still attempted (with a plain fallback) for direct file jobs above.
+      const srcFs = fsPath(source.remote, source.path);
+      const dstFs = fsPath(destination.remote, destination.path);
       const filter =
         items.length > 0 ? this.selectionFilter(items, options.filters) : buildFilter(options.filters);
 

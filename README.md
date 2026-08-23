@@ -121,8 +121,8 @@ docker compose ps   # el puerto 5572 del daemon rclone no debe estar publicado
 ### Desarrollo local
 
 ```bash
-npm install
-npm run dev          # build de packages/shared + api (tsx watch) + web (Vite)
+pnpm install
+pnpm run dev          # build de packages/shared + api (tsx watch) + web (Vite)
 ```
 
 El backend necesita un daemon rclone accesible (`RCLONE_RC_URL`); lo más
@@ -202,7 +202,7 @@ documentadas en `apps/api/src/config/env.ts`.
 ### Unitarios (Vitest)
 
 ```bash
-npm run test -w @cloudbridge/api
+pnpm --filter @cloudbridge/api test
 ```
 
 Cubren el cliente de la RC API (con `fetch` mockeado: `_async`, `_group`,
@@ -233,7 +233,7 @@ cd apps/web
 CLOUDBRIDGE_E2E_URL=http://localhost:8080 \
 CLOUDBRIDGE_E2E_USER=admin \
 CLOUDBRIDGE_E2E_PASSWORD=<tu ADMIN_PASSWORD> \
-npx playwright test
+pnpm exec playwright test
 ```
 
 ## Estructura del monorepo

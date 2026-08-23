@@ -2,6 +2,7 @@
   "name": "cloudbridge",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.21.0",
   "description": "Self-hosted multi-cloud manager powered by the rclone RC API",
   "license": "MIT",
   "workspaces": [
@@ -12,21 +13,21 @@
     "node": ">=20.19"
   },
   "scripts": {
-    "build": "npm run build -w @cloudbridge/shared && npm run build -w @cloudbridge/api && npm run build -w @cloudbridge/web",
-    "build:shared": "npm run build -w @cloudbridge/shared",
-    "dev": "npm run build:shared && concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "npm run dev -w @cloudbridge/api",
-    "dev:web": "npm run dev -w @cloudbridge/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "pnpm --filter @cloudbridge/shared build && pnpm --filter @cloudbridge/api build && pnpm --filter @cloudbridge/web build",
+    "build:shared": "pnpm --filter @cloudbridge/shared build",
+    "dev": "pnpm run build:shared && concurrently -n api,web -c cyan,magenta \"pnpm run dev:api\" \"pnpm run dev:web\"",
+    "dev:api": "pnpm --filter @cloudbridge/api dev",
+    "dev:web": "pnpm --filter @cloudbridge/web dev",
+    "typecheck": "pnpm -r --if-present run typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run test -w @cloudbridge/api",
-    "test:e2e": "npm run test:e2e -w @cloudbridge/web",
-    "db:generate": "npm run db:generate -w @cloudbridge/api",
-    "db:migrate": "npm run db:migrate -w @cloudbridge/api",
-    "seed": "npm run seed -w @cloudbridge/api"
+    "test": "pnpm --filter @cloudbridge/api test",
+    "test:e2e": "pnpm --filter @cloudbridge/web test:e2e",
+    "db:generate": "pnpm --filter @cloudbridge/api db:generate",
+    "db:migrate": "pnpm --filter @cloudbridge/api db:migrate",
+    "seed": "pnpm --filter @cloudbridge/api seed"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
