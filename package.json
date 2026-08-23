@@ -18,7 +18,10 @@
     "dev:api": "npm run dev -w @cloudbridge/api",
     "dev:web": "npm run dev -w @cloudbridge/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "npm run test -w @cloudbridge/api",
     "test:e2e": "npm run test:e2e -w @cloudbridge/web",
     "db:generate": "npm run db:generate -w @cloudbridge/api",
@@ -26,7 +29,15 @@
     "seed": "npm run seed -w @cloudbridge/api"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "concurrently": "^9.1.2",
-    "typescript": "^5.7.3"
+    "eslint": "^10.9.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.67.0"
   }
 }
