@@ -17,9 +17,12 @@ import { healthRoutes } from './routes/health.js';
 import { fsRoutes } from './routes/fs.js';
 import { remoteRoutes } from './routes/remotes.js';
 import { transferRoutes } from './routes/transfers.js';
+import { websocketRoutes } from './routes/ws.js';
 import { FsService } from './services/fs.js';
 import { LogService } from './services/logs.js';
 import { RunsService } from './services/runs.js';
+import { BandwidthManager } from './services/bandwidth.js';
+import { StatsBroadcaster } from './services/stats.js';
 import { TransferService } from './services/transfers.js';
 import { RemotesService } from './services/remotes.js';
 import { SettingsService } from './services/settings.js';
@@ -74,7 +77,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('remotes', new RemotesService(app));
   app.decorate('fs', new FsService(app));
   app.decorate('runs', new RunsService(db));
+  app.decorate('bandwidth', new BandwidthManager(app));
   app.decorate('transfers', new TransferService(app));
+  app.decorate('stats', new StatsBroadcaster(app, config.STATS_INTERVAL_MS));
 
   // Anything still marked as running belongs to a previous container.
   const interrupted = app.runs.markInterrupted();
@@ -132,14 +137,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(remoteRoutes);
   await app.register(fsRoutes);
   await app.register(transferRoutes);
+  await app.register(websocketRoutes);
 
-  // Poll rclone for finished jobs so runs stop being "running" once they end.
-  // Phase 4 layers the websocket broadcast on top of this same tick.
-  const reconcile = setInterval(() => {
-    void app.transfers.reconcile();
-  }, config.STATS_INTERVAL_MS);
-  reconcile.unref();
-  app.addHook('onClose', async () => clearInterval(reconcile));
+  // One ticker drives both finishing runs and pushing progress to the clients.
+  app.stats.start();
+  // Re-assert the configured global bandwidth limit on the daemon.
+  void app.bandwidth.applyDefault();
+  app.addHook('onClose', async () => app.stats.stop());
 
   if (config.WEB_DIST) {
     const root = resolve(config.WEB_DIST);

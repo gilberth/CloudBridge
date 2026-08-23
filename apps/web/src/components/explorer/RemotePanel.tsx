@@ -45,9 +45,7 @@ export function RemotePanel({
   onCopyTo,
   onMoveTo,
   onController,
-  dragHandlers,
-  dropProps,
-  isDropTarget,
+  compareFilter,
   disabled,
 }: {
   side: 'left' | 'right';
@@ -58,9 +56,8 @@ export function RemotePanel({
   onCopyTo: (entries: FsEntry[]) => void;
   onMoveTo: (entries: FsEntry[]) => void;
   onController: (controller: PanelController) => void;
-  dragHandlers?: (entry: FsEntry) => React.HTMLAttributes<HTMLTableRowElement>;
-  dropProps?: React.HTMLAttributes<HTMLDivElement>;
-  isDropTarget?: boolean;
+  /** When a comparison is active, show only rows of this category. */
+  compareFilter?: CompareCategory | null;
   disabled?: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -88,11 +85,12 @@ export function RemotePanel({
       ? all.filter((entry) => entry.name.toLowerCase().includes(search.toLowerCase()))
       : all;
     if (!compare) return filtered;
-    return filtered.map((entry) => {
+    const tinted: FileRow[] = filtered.map((entry) => {
       const category = compare.get(entry.path);
       return category ? { ...entry, compare: category } : entry;
     });
-  }, [listing.data, search, compare]);
+    return compareFilter ? tinted.filter((entry) => entry.compare === compareFilter) : tinted;
+  }, [listing.data, search, compare, compareFilter]);
 
   const selectionEntries = useMemo(
     () => entries.filter((entry) => selected.has(entry.name)),
@@ -197,11 +195,7 @@ export function RemotePanel({
       ref={containerRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      {...dropProps}
-      className={cn(
-        'flex h-full min-w-0 flex-col bg-surface outline-none',
-        isDropTarget && 'ring-2 ring-inset ring-primary',
-      )}
+      className="flex h-full min-w-0 flex-col bg-surface outline-none"
       aria-label={`Panel ${side === 'left' ? 'izquierdo' : 'derecho'}`}
     >
       <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-border px-2">
@@ -317,7 +311,11 @@ export function RemotePanel({
             }}
             sorting={sorting}
             onSortingChange={setSorting}
-            {...(dragHandlers ? { dragHandlers } : {})}
+            side={side}
+            onDragStart={(entry) => {
+              // Dragging a row that is not selected makes it the selection.
+              if (!selected.has(entry.name)) setSelected(new Set([entry.name]));
+            }}
           />
         )}
 

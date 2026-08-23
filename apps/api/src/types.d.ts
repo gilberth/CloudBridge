@@ -7,6 +7,7 @@ import type { RemotesService } from './services/remotes.js';
 import type { FsService } from './services/fs.js';
 import type { RunsService } from './services/runs.js';
 import type { LogService } from './services/logs.js';
+import type { BandwidthManager } from './services/bandwidth.js';
 import type { TransferService } from './services/transfers.js';
 import type { JobsService } from './services/jobs.js';
 import type { Scheduler } from './services/scheduler.js';
@@ -26,6 +27,7 @@ declare module 'fastify' {
     runs: RunsService;
     logs: LogService;
     transfers: TransferService;
+    bandwidth: BandwidthManager;
     jobs: JobsService;
     scheduler: Scheduler;
     stats: StatsBroadcaster;

@@ -130,6 +130,9 @@ export class TransferService {
     });
 
     try {
+      // rclone's limiter is process-wide, so the limit is held for this run and
+      // released when it finishes.
+      await this.app.bandwidth.acquire(run.id, options.bwlimit ?? null);
       const jobIds = await this.issue(run.group, request.mode, request.source, request.destinations, items, options);
       this.app.runs.attachJobIds(run.id, jobIds);
       this.app.logs.write(
@@ -141,6 +144,7 @@ export class TransferService {
       );
       return { ...run, rcloneJobIds: jobIds };
     } catch (error) {
+      await this.app.bandwidth.release(run.id);
       const message =
         error instanceof RcloneError || error instanceof RcloneUnavailableError
           ? error.message
@@ -231,6 +235,7 @@ export class TransferService {
       }
     }
 
+    await this.app.bandwidth.release(runId);
     const stats = await this.rclone.stats(run.group).catch(() => null);
     this.app.runs.update(runId, {
       status,
@@ -314,6 +319,7 @@ export class TransferService {
               : 'El dry-run no encontró nada que transferir.';
         }
 
+        await this.app.bandwidth.release(run.id);
         this.app.runs.update(run.id, {
           status: failed.length > 0 ? 'error' : 'success',
           finishedAt: new Date().toISOString(),

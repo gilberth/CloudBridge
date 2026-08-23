@@ -1,6 +1,7 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useHealth } from '@/hooks/useHealth';
+import { useStats } from '@/hooks/useStats';
 
 /**
  * Shown whenever the rclone daemon is unreachable. Actions across the app are
@@ -8,14 +9,16 @@ import { useHealth } from '@/hooks/useHealth';
  */
 export function DaemonBanner() {
   const { data, isError, error, refetch, isFetching } = useHealth();
-  const offline = isError || (data ? !data.rclone.online : false);
+  const { health: liveHealth } = useStats();
+  // The websocket reports the daemon every second; fall back to /api/health.
+  const offline = liveHealth ? !liveHealth.online : isError || (data ? !data.rclone.online : false);
   if (!offline) return null;
 
   const message = isError
     ? error instanceof Error
       ? error.message
       : 'CloudBridge no responde'
-    : (data?.rclone.error ?? 'El daemon rclone no responde');
+    : (liveHealth?.error ?? data?.rclone.error ?? 'El daemon rclone no responde');
 
   return (
     <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[12px] text-amber-700 dark:text-amber-300">

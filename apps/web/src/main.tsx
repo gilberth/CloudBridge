@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from '@/hooks/useTheme';
 import { AuthProvider } from '@/hooks/useAuth';
+import { StatsProvider } from '@/hooks/useStats';
 import { App } from '@/App';
 import './index.css';
 
@@ -29,7 +30,9 @@ createRoot(container).render(
         <TooltipProvider delayDuration={300}>
           <BrowserRouter>
             <AuthProvider>
-              <App />
+              <StatsProvider>
+                <App />
+              </StatsProvider>
             </AuthProvider>
           </BrowserRouter>
           <Toaster position="bottom-right" richColors closeButton toastOptions={{ duration: 5000 }} />

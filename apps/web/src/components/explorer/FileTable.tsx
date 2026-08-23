@@ -7,6 +7,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
+import { useDraggable } from '@dnd-kit/core';
 import { ArrowDown, ArrowUp, MoreVertical } from 'lucide-react';
 import type { CompareCategory, FsEntry } from '@cloudbridge/shared';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -35,7 +36,8 @@ export function FileTable({
   onContextMenu,
   sorting,
   onSortingChange,
-  dragHandlers,
+  side,
+  onDragStart,
 }: {
   entries: FileRow[];
   selected: Set<string>;
@@ -44,8 +46,9 @@ export function FileTable({
   onContextMenu: (entry: FsEntry, event: React.MouseEvent) => void;
   sorting: SortingState;
   onSortingChange: (sorting: SortingState) => void;
-  /** Supplied by the Explorer to make rows draggable between panels. */
-  dragHandlers?: (entry: FsEntry) => React.HTMLAttributes<HTMLTableRowElement>;
+  side: 'left' | 'right';
+  /** Lets the Explorer promote the dragged row into the selection. */
+  onDragStart: (entry: FsEntry) => void;
 }) {
   const allSelected = entries.length > 0 && selected.size === entries.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -182,9 +185,13 @@ export function FileTable({
       </thead>
       <tbody>
         {table.getRowModel().rows.map((row) => (
-          <tr
+          <DraggableRow
             key={row.original.name}
-            {...(dragHandlers?.(row.original) ?? {})}
+            side={side}
+            entry={row.original}
+            selected={selected.has(row.original.name)}
+            compareClass={row.original.compare ? COMPARE_STYLES[row.original.compare] : undefined}
+            onDragStart={onDragStart}
             onClick={(event) => {
               if (event.shiftKey || event.ctrlKey || event.metaKey) {
                 handleRangeClick(event, row.index, entries, selected, onSelectionChange);
@@ -197,18 +204,13 @@ export function FileTable({
               event.preventDefault();
               onContextMenu(row.original, event);
             }}
-            className={cn(
-              'group cursor-default border-b border-border/40 transition-colors hover:bg-accent/50',
-              selected.has(row.original.name) && 'bg-primary/10 hover:bg-primary/15',
-              row.original.compare && COMPARE_STYLES[row.original.compare],
-            )}
           >
             {row.getVisibleCells().map((cell) => (
               <td key={cell.id} className="max-w-0 px-2 py-1">
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </td>
             ))}
-          </tr>
+          </DraggableRow>
         ))}
       </tbody>
     </table>
@@ -242,4 +244,51 @@ function handleRangeClick(
     if (entry) next.add(entry.name);
   }
   onSelectionChange(next, index);
+}
+
+/**
+ * A table row that can be dragged onto the other panel. The drag carries the
+ * panel it came from; the Explorer resolves it to the whole current selection.
+ */
+function DraggableRow({
+  side,
+  entry,
+  selected,
+  compareClass,
+  onDragStart,
+  children,
+  ...handlers
+}: {
+  side: 'left' | 'right';
+  entry: FsEntry;
+  selected: boolean;
+  compareClass?: string;
+  onDragStart: (entry: FsEntry) => void;
+  children: React.ReactNode;
+} & Pick<React.HTMLAttributes<HTMLTableRowElement>, 'onClick' | 'onDoubleClick' | 'onContextMenu'>) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `${side}:${entry.name}`,
+    data: { side, entry },
+  });
+
+  return (
+    <tr
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      {...handlers}
+      onPointerDown={(event) => {
+        onDragStart(entry);
+        listeners?.onPointerDown?.(event);
+      }}
+      className={cn(
+        'group cursor-default border-b border-border/40 transition-colors hover:bg-accent/50',
+        selected && 'bg-primary/10 hover:bg-primary/15',
+        isDragging && 'opacity-40',
+        compareClass,
+      )}
+    >
+      {children}
+    </tr>
+  );
 }
