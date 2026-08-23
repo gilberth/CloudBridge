@@ -211,6 +211,38 @@ no asumas "está roto" ni "es cuota" sin reproducirlo — usa `operations/copyfi
 path exacto del ítem fallido justo después de la falla para comparar. Si el ID cambia entre listado y
 transferencia, es este bug de IDs de Google Photos, no algo que arreglar en el código.
 
+### Incidente 2026-08-23 (cont. 2): "object not found" copiando archivos en subcarpetas — bug propio, no de Google
+
+Después de los fixes anteriores (retry, fallback server-side→normal), copiar un archivo dentro de una
+subcarpeta (no en la raíz del remoto) seguía fallando **siempre**, con `"object not found"` — un mensaje
+de rclone distinto al `"File not found"` de la API de Google (por eso el primer fix de detección de
+reintento, que solo miraba `/file not found/i`, no lo agarraba — ver commit `f9bb33a` que amplió la regex
+a `/(file|object) not found/i`; ayudó pero no resolvió el fondo).
+
+**Causa real, encontrada recién con `RCLONE_LOG_LEVEL=DEBUG` comparando el payload exacto que manda la
+app contra un curl manual**: en el bloque de copia directa de `TransferService.issue()` (el que evita
+`sync/copy`+filtro, ver más arriba), `srcFs`/`dstFs` ya incluyen `source.path`/`destination.path` como raíz
+del filesystem (vía `fsPath(remote, path, options)` — construye `"remote:path"`), pero el código armaba
+`srcRemote`/`dstRemote` con `joinPath(source.path, name)`, **agregando el mismo path de nuevo**. Para
+archivos en la raíz del remoto (`path === ''`) no se notaba (`joinPath('', name) === name`); para
+cualquier archivo dentro de una subcarpeta, terminaba pidiéndole a rclone algo como
+`.../01 - Introducción/01 - Introducción/external-links .txt` — una ruta que nunca existió, así que
+fallaba el 100% de las veces, sin importar reintentos, fallback server-side, ni credenciales.
+
+Todos los "hallazgos" de intermitencia/IDs inestables/cuota de las secciones anteriores de este incidente
+fueron reales *para los casos puntuales que se probaron* (archivos en la raíz de un remoto, o pruebas
+manuales aisladas que por construcción no duplicaban el path) — pero el patrón dominante que el usuario
+seguía viendo ("mismo error", "cuando yo ejecuto siempre da error") era este bug de path duplicado, no la
+inestabilidad de Google Photos. **Fix** (commit `15ed71d`): `srcRemote`/`dstRemote` en ese bloque ahora
+son solo `sanitizeName(item.name)` — el path del padre ya lo aporta `srcFs`/`dstFs`.
+
+**Lección para la próxima vez que algo similar aparezca**: cuando una reproducción manual aislada
+funciona pero la app siempre falla con los mismos parámetros de alto nivel, **comparar el payload exacto
+que la app le manda a rclone** (`RCLONE_LOG_LEVEL=DEBUG`, grepear `rc: "operations/..."`) contra lo que se
+está probando a mano — no asumir que "misma operación" significa "mismos argumentos reales". Aquí la
+diferencia (`joinPath` de más) era invisible a menos que se mirara el string final `dstFs`/`dstRemote` que
+llega al daemon.
+
 ### client_id propio de Google Drive por remoto
 
 `ulima_drive` y `drive` ya tienen client_id/secret OAuth propios (dos proyectos de Google Cloud distintos,
