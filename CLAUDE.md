@@ -185,17 +185,31 @@ CloudBridge no exponía esa opción. **Fix** (commit `5cba939`): se agregó `ign
 programados). Confirmado que funciona: con la opción activa, la transferencia sigue con el resto de
 archivos en vez de abortar.
 
-**Por qué había tantos 404 — límite real de Google, no arreglable**: la mayoría de los 404 masivos
-(cientos seguidos, uno tras otro) resultaron ser **todos los archivos dentro de la carpeta virtual `Google
-Fotos`** dentro de `drive:`. Google Drive lista esos archivos (son fotos de Google Photos que aparecen
-como si vivieran en Drive), pero **su contenido no es descargable vía la API de Drive** — Google deprecó
-ese acceso hace años. Ningún client_id propio, token nuevo, ni cambio de credenciales lo arregla: se probó
-explícitamente creando un client_id nuevo y dedicado para `drive` y el problema persistió idéntico. La
-única forma de evitarlo es **excluir la carpeta `Google Fotos` del filtro de la transferencia** (o de
-cualquier remoto Drive que la tenga) antes de copiar/sincronizar — no hay fix de código posible del lado de
-CloudBridge. Aparte de ese patrón masivo, también aparecen 404 sueltos en archivos individuales (Google
-Docs/Sheets nativos con "Failed to read description", u otros) que sí pueden ser shares rotos genuinos —
-esos sí se benefician de `--ignore-errors` para no bloquear el resto.
+**Por qué había tantos 404 — IDs inestables de "Google Fotos" dentro de Drive, no archivos rotos.** La
+mayoría de los 404 masivos (cientos seguidos) fueron en archivos dentro de la carpeta virtual `Google
+Fotos` de `drive:`. Dos hipótesis se descartaron **con evidencia directa**, no solo por sospecha:
+
+- *"Son archivos rotos / no descargables vía API"* — falso. Tomando el path exacto de un archivo que
+  acababa de fallar en el job masivo y pidiéndolo aislado con `operations/copyfile`, copia perfecto.
+- *"Es cuota/rate-limit del client_id nuevo bajo concurrencia"* — falso. Se repitió el mismo copy masivo
+  con `transfers:1, checkers:1` (sin ninguna concurrencia) y los 404 siguieron apareciendo igual.
+
+La causa real, confirmada: **el mismo path devuelve un ID de Google distinto según cómo se resuelva.** El
+listado masivo (`sync/copy` recorriendo el árbol) capturó `12bdLZTQp82p8W56YXXGOa3jEX4e4CP-zxQ` para
+`Google Fotos/2016/2016-09-23.jpg`; segundos después, resolver ese mismo path de forma aislada devolvió
+`1J1g4rSV9HvtdKpFnmhlVRwICk-3PWFeY` — un ID totalmente distinto, y con ese sí copia. Es decir: los ítems
+de Google Photos expuestos dentro de Drive tienen **IDs virtuales inestables** — el ID que se captura al
+listar ya no es válido para cuando la transferencia intenta usarlo. Esto es indiferente a: `--ignore-errors`
+(ayuda a no abortar todo, pero no evita el 404 puntual), `--transfers`/concurrencia, o qué client_id se use.
+**Workaround real**: excluir la carpeta `Google Fotos` del filtro antes de copiar/sincronizar ese remoto —
+no hay fix de código posible del lado de CloudBridge ni de rclone para esto, es cómo Google expone esos
+ítems. Aparte de ese patrón, también pueden aparecer 404 sueltos por shares genuinamente rotos en otros
+archivos — esos sí se benefician de `--ignore-errors`.
+
+**Regla para no repetir el error de diagnóstico de esta sesión**: ante un 404/error intermitente de Drive,
+no asumas "está roto" ni "es cuota" sin reproducirlo — usa `operations/copyfile`/`operations/stat` con el
+path exacto del ítem fallido justo después de la falla para comparar. Si el ID cambia entre listado y
+transferencia, es este bug de IDs de Google Photos, no algo que arreglar en el código.
 
 ### client_id propio de Google Drive por remoto
 
