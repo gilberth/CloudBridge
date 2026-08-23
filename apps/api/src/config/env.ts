@@ -47,6 +47,17 @@ const envSchema = z.object({
 
   /** Interval of the core/stats poll broadcast over the websocket. */
   STATS_INTERVAL_MS: z.coerce.number().int().min(250).max(60_000).default(1000),
+
+  /**
+   * Own OAuth client for Google Drive remotes. rclone's default client_id is
+   * shared across every rclone user in the world and is being retired during
+   * 2026; it's also prone to rate limits and odd 404s on exports of native
+   * Google Docs well before then. When set, every new `drive` remote gets
+   * these injected automatically unless the caller already supplied its own
+   * `client_id` — see `RemotesService.create()`.
+   */
+  GOOGLE_DRIVE_CLIENT_ID: z.string().optional(),
+  GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

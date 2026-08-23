@@ -94,6 +94,14 @@ lint. Antes de dar una tarea por terminada corre `npm run typecheck` y `npm run 
 se usan si no existe ningún usuario aún (idempotente, no reescribe password después). Lista completa en
 `.env.example`; variables extra de dev local sin Docker están en `apps/api/src/config/env.ts`.
 
+`GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` (opcionales, en `apps/api/src/config/env.ts`, **no**
+en `.env.example` — son específicas de este despliegue): client_id OAuth propio para Drive. Si están
+seteadas, `RemotesService.create()` (`apps/api/src/services/remotes.ts`) las inyecta automáticamente en
+cualquier remoto nuevo de tipo `drive` que no traiga su propio `client_id`, así no hace falta repetir el
+proceso manual de `rclone authorize` con credenciales propias para cada remoto de Drive que se agregue.
+El client_id compartido de rclone por defecto se retira durante 2026 y además da 404 erráticos exportando
+Google Docs/Sheets nativos bajo carga — ver el incidente de abajo.
+
 ## Seguridad
 
 El daemon rclone (puerto 5572) **nunca debe publicarse al host** — verificar con `docker compose ps` tras
@@ -164,3 +172,37 @@ cloudbridge-rclone | grep 'rc: "operations/list"'`, que loggea los parámetros r
 z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false)` en vez de `z.coerce.boolean()`.
 Regla general para este repo: **nunca usar `z.coerce.boolean()` en un schema que valida query strings** —
 usar el patrón `z.preprocess` de arriba, o `z.enum(['true','false']).transform(...)`.
+
+### Incidente 2026-08-23 (cont.): transferencias que abortaban en el primer archivo roto
+
+**Síntoma**: `copy drive: → ulima_drive:` fallaba en ~30s, 0 archivos copiados, por un solo error
+`googleapi: Error 404: File not found` en un archivo cualquiera.
+
+**Causa**: rclone aborta toda la operación en el primer error salvo que se le pase `--ignore-errors`.
+CloudBridge no exponía esa opción. **Fix** (commit `5cba939`): se agregó `ignoreErrors` a `TransferOptions`
+(`packages/shared/src/jobs.ts` y `schemas.ts`), mapeado a `_config.IgnoreErrors` en
+`apps/api/src/rclone/options.ts`, con checkbox en `TransferDialog.tsx` (Explorer) y `JobWizard.tsx` (jobs
+programados). Confirmado que funciona: con la opción activa, la transferencia sigue con el resto de
+archivos en vez de abortar.
+
+**Por qué había tantos 404 — límite real de Google, no arreglable**: la mayoría de los 404 masivos
+(cientos seguidos, uno tras otro) resultaron ser **todos los archivos dentro de la carpeta virtual `Google
+Fotos`** dentro de `drive:`. Google Drive lista esos archivos (son fotos de Google Photos que aparecen
+como si vivieran en Drive), pero **su contenido no es descargable vía la API de Drive** — Google deprecó
+ese acceso hace años. Ningún client_id propio, token nuevo, ni cambio de credenciales lo arregla: se probó
+explícitamente creando un client_id nuevo y dedicado para `drive` y el problema persistió idéntico. La
+única forma de evitarlo es **excluir la carpeta `Google Fotos` del filtro de la transferencia** (o de
+cualquier remoto Drive que la tenga) antes de copiar/sincronizar — no hay fix de código posible del lado de
+CloudBridge. Aparte de ese patrón masivo, también aparecen 404 sueltos en archivos individuales (Google
+Docs/Sheets nativos con "Failed to read description", u otros) que sí pueden ser shares rotos genuinos —
+esos sí se benefician de `--ignore-errors` para no bloquear el resto.
+
+### client_id propio de Google Drive por remoto
+
+`ulima_drive` y `drive` ya tienen client_id/secret OAuth propios (dos proyectos de Google Cloud distintos,
+uno por cada uno — ver historial de esta sesión si hace falta rotar credenciales). Desde el commit que
+agrega `GOOGLE_DRIVE_CLIENT_ID`/`GOOGLE_DRIVE_CLIENT_SECRET` a `apps/api/src/config/env.ts`, **cualquier
+remoto nuevo de tipo `drive` que se cree desde CloudBridge recibe automáticamente esas credenciales** si
+están seteadas en el `.env` del LXC y el remoto no trae su propio `client_id` (ver
+`RemotesService.create()` en `apps/api/src/services/remotes.ts`) — no hace falta repetir el proceso manual
+de `rclone authorize` para cada remoto nuevo, solo para el primero que se configuró sin este mecanismo.

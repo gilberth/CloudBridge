@@ -11,6 +11,7 @@ import { maskSecret } from '../lib/crypto.js';
 import { sanitizeRemoteName } from '../lib/path.js';
 import { fsRoot } from '../rclone/fsstring.js';
 import { RcloneError, RcloneUnavailableError } from '../rclone/client.js';
+import { env } from '../config/env.js';
 
 const OAUTH_SET = new Set<string>(OAUTH_PROVIDERS);
 
@@ -142,6 +143,13 @@ export class RemotesService {
     if (existing.includes(remote)) throw conflict(`Ya existe un remoto llamado "${remote}"`);
 
     const payload = { ...parameters };
+    if (type === 'drive' && !payload.client_id) {
+      const { GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET } = env();
+      if (GOOGLE_DRIVE_CLIENT_ID && GOOGLE_DRIVE_CLIENT_SECRET) {
+        payload.client_id = GOOGLE_DRIVE_CLIENT_ID;
+        payload.client_secret = GOOGLE_DRIVE_CLIENT_SECRET;
+      }
+    }
     if (token) payload.token = this.normaliseToken(token);
 
     await this.rclone.configCreate(remote, type, payload);
