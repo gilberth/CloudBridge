@@ -274,16 +274,32 @@ export class RcloneClient {
 
   async list(fs: string, remote: string, opt: ListOptions = {}): Promise<RcListItem[]> {
     // A single-level listing is usually instant, but a cold OAuth token
-    // refresh or a directory with thousands of entries (a large Team Drive,
-    // an S3 bucket root, …) can take arbitrarily long. Run it as a background
-    // job and poll instead of a single call bound by a fixed timeout, so a
-    // slow listing degrades to "still loading" rather than a hard failure.
-    const result = await this.callAsyncAndWait<RcListResult>(
-      'operations/list',
-      { fs, remote, opt },
-      { maxWaitMs: 5 * 60_000 },
-    );
-    return result.list ?? [];
+    // refresh, a directory with thousands of entries (a large Team Drive, an
+    // S3 bucket root, …), or a Google Drive folder full of shortcuts rclone
+    // has to resolve one API call at a time (worse yet if some are dangling
+    // and every resolution attempt has to fail first) can take a long time.
+    // Run it as a background job and poll instead of a single call bound by
+    // a fixed timeout, so a slow listing degrades to "still loading" rather
+    // than a hard failure.
+    try {
+      const result = await this.callAsyncAndWait<RcListResult>(
+        'operations/list',
+        { fs, remote, opt },
+        { maxWaitMs: 10 * 60_000 },
+      );
+      return result.list ?? [];
+    } catch (error) {
+      if (error instanceof RcloneUnavailableError) {
+        throw new RcloneUnavailableError(
+          'operations/list',
+          `${error.message}. Si es un remoto de Google Drive, revisa si la carpeta tiene muchos ` +
+            'shortcuts (sobre todo "dangling"): resolverlos puede ser muy lento. Prueba activando ' +
+            'skip_dangling_shortcuts (u skip_shortcuts) en las opciones avanzadas del remoto.',
+          error.cause,
+        );
+      }
+      throw error;
+    }
   }
 
   about(fs: string): Promise<RcAbout> {
