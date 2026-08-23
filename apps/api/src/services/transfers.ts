@@ -301,7 +301,13 @@ export class TransferService {
           return { jobid };
         } catch (error) {
           lastError = error as RcloneError | RcloneUnavailableError;
-          const notFound = error instanceof RcloneError && /file not found/i.test(error.message);
+          // rclone reports the exact same underlying failure two different
+          // ways depending on where it gives up: Google's own googleapi 404
+          // ("File not found: <id>, notFound") when the server-side attempt
+          // reaches Drive, or its own generic wrapper ("object not found")
+          // when it gives up resolving the object before that. Both need the
+          // same fallback/retry treatment.
+          const notFound = error instanceof RcloneError && /(file|object) not found/i.test(error.message);
           if (!notFound) return { jobid, error: lastError };
           if (attempt < attemptsPerCandidate) {
             await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
