@@ -425,6 +425,12 @@ function OptionsStep({
           checked={options.createEmptySrcDirs}
           onChange={(createEmptySrcDirs) => onOptionsChange({ createEmptySrcDirs })}
         />
+        <Toggle
+          label="--ignore-errors"
+          help="Sigue con el resto de archivos si uno falla, en vez de abortar todo el job."
+          checked={options.ignoreErrors}
+          onChange={(ignoreErrors) => onOptionsChange({ ignoreErrors })}
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-3">

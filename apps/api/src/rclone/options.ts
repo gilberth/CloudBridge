@@ -22,6 +22,7 @@ export function buildConfig(
   if (options.dryRun) config.DryRun = true;
   if (options.checkFirst) config.CheckFirst = true;
   if (options.trackRenames) config.TrackRenames = true;
+  if (options.ignoreErrors) config.IgnoreErrors = true;
 
   // BwLimit is deliberately absent: rclone's bandwidth limiter is a single
   // process-wide token bucket, so a value passed in `_config` is accepted and

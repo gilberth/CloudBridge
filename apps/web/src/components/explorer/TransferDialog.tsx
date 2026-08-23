@@ -39,17 +39,19 @@ export function TransferDialog({
 }: {
   request: TransferRequest | null;
   onClose: () => void;
-  onConfirm: (mode: TransferMode, dryRun: boolean, confirm?: string) => void;
+  onConfirm: (mode: TransferMode, dryRun: boolean, ignoreErrors: boolean, confirm?: string) => void;
   pending: boolean;
 }) {
   const [mode, setMode] = useState<TransferMode>('copy');
   const [dryRun, setDryRun] = useState(false);
+  const [ignoreErrors, setIgnoreErrors] = useState(false);
   const [typed, setTyped] = useState('');
 
   useEffect(() => {
     if (request) {
       setMode(request.mode);
       setDryRun(false);
+      setIgnoreErrors(false);
       setTyped('');
     }
   }, [request]);
@@ -138,6 +140,17 @@ export function TransferDialog({
             </span>
           </label>
 
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={ignoreErrors}
+              onCheckedChange={(checked) => setIgnoreErrors(checked === true)}
+            />
+            <span>
+              <span className="mono">--ignore-errors</span> — seguir con el resto si un archivo falla
+              (en vez de abortar toda la transferencia)
+            </span>
+          </label>
+
           {mode === 'sync' && (
             <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-[12px] text-destructive">
               <p className="flex items-center gap-1.5 font-medium">
@@ -172,7 +185,9 @@ export function TransferDialog({
           <Button
             variant={destructive ? 'destructive' : 'default'}
             disabled={blocked || pending}
-            onClick={() => onConfirm(mode, dryRun, destructive ? typed.trim() : undefined)}
+            onClick={() =>
+              onConfirm(mode, dryRun, ignoreErrors, destructive ? typed.trim() : undefined)
+            }
           >
             {pending && <LoaderCircle className="animate-spin" />}
             {dryRun ? 'Simular' : 'Ejecutar'}

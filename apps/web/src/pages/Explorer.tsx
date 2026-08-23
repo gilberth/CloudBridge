@@ -53,13 +53,23 @@ export default function ExplorerPage() {
   const [compareFilter, setCompareFilter] = useState<CompareCategory | null>(null);
 
   const transfer = useMutation({
-    mutationFn: ({ mode, dryRun, confirm }: { mode: TransferMode; dryRun: boolean; confirm?: string }) => {
+    mutationFn: ({
+      mode,
+      dryRun,
+      ignoreErrors,
+      confirm,
+    }: {
+      mode: TransferMode;
+      dryRun: boolean;
+      ignoreErrors: boolean;
+      confirm?: string;
+    }) => {
       const current = request!;
       return api.fs.transfer(mode, {
         source: current.source,
         destination: current.destination,
         items: current.items.map((entry) => ({ name: entry.name, isDir: entry.isDir })),
-        options: { dryRun },
+        options: { dryRun, ignoreErrors },
         ...(confirm ? { confirm } : {}),
       });
     },
@@ -283,8 +293,8 @@ export default function ExplorerPage() {
           request={request}
           pending={transfer.isPending}
           onClose={() => setRequest(null)}
-          onConfirm={(mode, dryRun, confirm) =>
-            transfer.mutate({ mode, dryRun, ...(confirm ? { confirm } : {}) })
+          onConfirm={(mode, dryRun, ignoreErrors, confirm) =>
+            transfer.mutate({ mode, dryRun, ignoreErrors, ...(confirm ? { confirm } : {}) })
           }
         />
       </div>

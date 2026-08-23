@@ -12,6 +12,12 @@ export interface TransferOptions {
   checkFirst: boolean;
   trackRenames: boolean;
   createEmptySrcDirs: boolean;
+  /**
+   * `--ignore-errors`: keep going past a file rclone can't transfer (broken
+   * Drive share, 404 on read, permission error…) instead of aborting the
+   * whole run on the first one.
+   */
+  ignoreErrors: boolean;
   /** `--transfers`; null falls back to the global default. */
   transfers: number | null;
   checkers: number | null;
@@ -31,6 +37,7 @@ export const DEFAULT_TRANSFER_OPTIONS: TransferOptions = {
   checkFirst: false,
   trackRenames: false,
   createEmptySrcDirs: true,
+  ignoreErrors: false,
   transfers: null,
   checkers: null,
   bwlimit: null,

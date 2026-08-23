@@ -100,6 +100,7 @@ export const transferOptionsSchema = z.object({
   checkFirst: z.boolean().default(false),
   trackRenames: z.boolean().default(false),
   createEmptySrcDirs: z.boolean().default(true),
+  ignoreErrors: z.boolean().default(false),
   transfers: z.number().int().min(1).max(64).nullable().default(null),
   checkers: z.number().int().min(1).max(256).nullable().default(null),
   bwlimit: z
