@@ -18,7 +18,7 @@ export function RemotesNav({ collapsed }: { collapsed: boolean }) {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col border-t border-border pt-2">
+    <div className="flex min-h-0 flex-1 flex-col border-t border-border/70 pt-2">
       {!collapsed && (
         <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Remotos
@@ -84,7 +84,12 @@ export function RemotesNav({ collapsed }: { collapsed: boolean }) {
       </div>
 
       <div className="p-2">
-        <Button asChild variant="outline" size="sm" className={cn('w-full', collapsed && 'px-0')}>
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className={cn('w-full', collapsed && 'px-0')}
+        >
           <Link to="/remotes?add=1">
             <Plus />
             {!collapsed && 'Añadir remoto'}

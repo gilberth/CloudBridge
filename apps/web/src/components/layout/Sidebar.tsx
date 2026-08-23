@@ -41,45 +41,53 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'flex h-full shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-200',
+        'flex h-full shrink-0 flex-col border-r border-border/70 bg-sidebar transition-[width] duration-200',
         collapsed ? 'w-14' : 'w-[220px]',
       )}
     >
-      <div className="flex h-11 items-center gap-2 border-b border-border px-3">
+      <div className="flex h-11 items-center gap-2 border-b border-border/70 px-3">
         <div className="grid size-6 shrink-0 place-items-center rounded bg-primary/15 text-primary">
           <Cloud className="size-3.5" />
         </div>
-        {!collapsed && <span className="text-[13px] font-semibold tracking-tight">CloudBridge</span>}
+        {!collapsed && (
+          <span className="text-[13px] font-semibold tracking-tight">CloudBridge</span>
+        )}
       </div>
 
       <nav className="flex flex-col gap-0.5 p-2">
         {NAV.map(({ to, label, icon: Icon }) => (
-          <Tooltip key={to} disableHoverableContent>
-            <TooltipTrigger asChild>
-              <NavLink
-                to={to}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
-                    collapsed && 'justify-center px-0',
-                    isActive
-                      ? 'bg-primary/12 font-medium text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                  )
-                }
-              >
-                <Icon className="size-4 shrink-0" />
-                {!collapsed && label}
-              </NavLink>
-            </TooltipTrigger>
-            {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
-          </Tooltip>
+          <NavLink
+            key={to}
+            to={to}
+            className="block rounded-md"
+            aria-label={collapsed ? label : undefined}
+          >
+            {({ isActive }) => (
+              <Tooltip disableHoverableContent>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      'relative flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors',
+                      collapsed && 'justify-center px-0',
+                      isActive
+                        ? 'bg-primary/10 font-medium text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    )}
+                  >
+                    <Icon className={cn('size-4 shrink-0', isActive && 'text-primary')} />
+                    {!collapsed && <span className="leading-none">{label}</span>}
+                  </span>
+                </TooltipTrigger>
+                {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
+              </Tooltip>
+            )}
+          </NavLink>
         ))}
       </nav>
 
       <RemotesNav collapsed={collapsed} />
 
-      <div className="mt-auto flex items-center gap-1 border-t border-border p-2">
+      <div className="mt-auto flex items-center gap-1 border-t border-border/70 p-2">
         <Button variant="ghost" size="icon-sm" onClick={toggle} aria-label="Cambiar tema">
           {theme === 'dark' ? <Sun /> : <Moon />}
         </Button>
