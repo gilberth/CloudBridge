@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SortingState } from '@tanstack/react-table';
 import {
@@ -78,6 +78,20 @@ export function RemotePanel({
     queryFn: () => api.fs.list(remote!, path),
     enabled: Boolean(remote) && !disabled,
   });
+
+  // rclone lists a directory in one shot with no partial results, so a very
+  // large remote root just takes longer — there is nothing to stream
+  // incrementally. This only tells the user their wait is expected instead
+  // of leaving a bare skeleton up indefinitely.
+  const [slowLoading, setSlowLoading] = useState(false);
+  useEffect(() => {
+    if (!listing.isPending) {
+      setSlowLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowLoading(true), 4000);
+    return () => clearTimeout(timer);
+  }, [listing.isPending, remote, path]);
 
   const entries = useMemo<FileRow[]>(() => {
     const all = listing.data?.entries ?? [];
@@ -283,7 +297,16 @@ export function RemotePanel({
           />
         )}
 
-        {remote && listing.isPending && <TableSkeleton rows={10} columns={4} />}
+        {remote && listing.isPending && (
+          <div>
+            {slowLoading && (
+              <p className="px-3 pt-2 text-[11px] text-muted-foreground">
+                Esta carpeta tiene muchos elementos, puede tardar un poco…
+              </p>
+            )}
+            <TableSkeleton rows={10} columns={4} />
+          </div>
+        )}
 
         {remote && listing.isError && (
           <EmptyState

@@ -160,6 +160,46 @@ export class RcloneClient {
     return result.jobid;
   }
 
+  /**
+   * Issue a call in the background and poll `job/status` until it finishes,
+   * returning the job's `output` field.
+   *
+   * This is the pattern for calls whose duration scales with the remote
+   * itself (listing a huge Team Drive, an S3 bucket with many objects) rather
+   * than with CloudBridge: a single synchronous HTTP call is bound by one
+   * fixed timeout no matter how generous, so it either succeeds or fails
+   * outright. Polling instead removes that ceiling — the request takes as
+   * long as rclone needs, and each individual poll stays fast — while still
+   * giving the caller one place to bound the *total* wait via `maxWaitMs`.
+   */
+  async callAsyncAndWait<T>(
+    endpoint: string,
+    params: Record<string, unknown> = {},
+    options: Omit<CallOptions, 'async'> & { pollIntervalMs?: number; maxWaitMs?: number } = {},
+  ): Promise<T> {
+    const { pollIntervalMs = 750, maxWaitMs = 10 * 60_000, ...call } = options;
+    const jobid = await this.callAsync(endpoint, params, call);
+    const deadline = Date.now() + maxWaitMs;
+
+    while (Date.now() < deadline) {
+      const status = await this.call<RcJobStatus>('job/status', { jobid }, { timeoutMs: 10_000 });
+      if (status.finished) {
+        if (!status.success) {
+          throw new RcloneError(endpoint, 200, status.error || `${endpoint} falló en rclone`, status);
+        }
+        return status.output as T;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    // Best-effort: don't leave an abandoned job running forever in rclone.
+    await this.jobStop(jobid).catch(() => undefined);
+    throw new RcloneUnavailableError(
+      endpoint,
+      `${endpoint} no terminó tras ${Math.round(maxWaitMs / 1000)}s`,
+    );
+  }
+
   // ---------------------------------------------------------------- core ---
 
   version(): Promise<RcCoreVersion> {
@@ -235,12 +275,13 @@ export class RcloneClient {
   async list(fs: string, remote: string, opt: ListOptions = {}): Promise<RcListItem[]> {
     // A single-level listing is usually instant, but a cold OAuth token
     // refresh or a directory with thousands of entries (a large Team Drive,
-    // an S3 bucket root, …) can take well past the generic call timeout.
-    // Give it the same headroom as `size` instead of the global default.
-    const result = await this.call<RcListResult>(
+    // an S3 bucket root, …) can take arbitrarily long. Run it as a background
+    // job and poll instead of a single call bound by a fixed timeout, so a
+    // slow listing degrades to "still loading" rather than a hard failure.
+    const result = await this.callAsyncAndWait<RcListResult>(
       'operations/list',
       { fs, remote, opt },
-      { timeoutMs: 120_000 },
+      { maxWaitMs: 5 * 60_000 },
     );
     return result.list ?? [];
   }
