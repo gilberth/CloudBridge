@@ -83,6 +83,11 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TRUST_PROXY: ${TRUST_PROXY:-true}
       TZ: ${TZ:-UTC}
+      # Own OAuth client injected automatically into new `drive` remotes that
+      # don't bring their own client_id — see RemotesService.create(). Optional:
+      # falls back to rclone's shared client_id (soon retired) when unset.
+      GOOGLE_DRIVE_CLIENT_ID: ${GOOGLE_DRIVE_CLIENT_ID:-}
+      GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET:-}
     volumes:
       - cloudbridge-data:/data
       # Read-only: rclone owns this file, CloudBridge only reads it to export.
