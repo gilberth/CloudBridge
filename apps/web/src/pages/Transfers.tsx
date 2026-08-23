@@ -123,6 +123,7 @@ export default function TransfersPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
+                            aria-label="Pausar"
                             onClick={() => act.mutate({ id: run.id, action: 'pause' })}
                           >
                             <Pause />
@@ -138,6 +139,7 @@ export default function TransfersPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
+                            aria-label="Reanudar"
                             onClick={() => act.mutate({ id: run.id, action: 'resume' })}
                           >
                             <Play />
@@ -151,6 +153,7 @@ export default function TransfersPage() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
+                          aria-label="Cancelar"
                           className="text-destructive"
                           disabled={run.status !== 'running'}
                           onClick={() => act.mutate({ id: run.id, action: 'stop' })}

@@ -263,7 +263,7 @@ function RemoteCard({
           <Pencil />
           Editar
         </Button>
-        <Button variant="ghost" size="icon-sm" className="ml-auto text-destructive" onClick={onDelete}>
+        <Button variant="ghost" size="icon-sm" aria-label="Eliminar remoto" className="ml-auto text-destructive" onClick={onDelete}>
           <Trash2 />
         </Button>
       </div>

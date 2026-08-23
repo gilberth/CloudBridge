@@ -261,6 +261,7 @@ function IconAction({
         <Button
           variant="ghost"
           size="icon-sm"
+          aria-label={label}
           onClick={onClick}
           className={cn(destructive && 'text-destructive')}
         >

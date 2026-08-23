@@ -62,10 +62,10 @@ export function CompareBar({
       )}
 
       <div className="ml-auto flex items-center gap-1">
-        <Button variant="ghost" size="icon-sm" onClick={onRefresh} disabled={refreshing}>
+        <Button variant="ghost" size="icon-sm" aria-label="Actualizar comparación" onClick={onRefresh} disabled={refreshing}>
           <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
         </Button>
-        <Button variant="ghost" size="icon-sm" onClick={onClose}>
+        <Button variant="ghost" size="icon-sm" aria-label="Cerrar comparación" onClick={onClose}>
           <X />
         </Button>
       </div>

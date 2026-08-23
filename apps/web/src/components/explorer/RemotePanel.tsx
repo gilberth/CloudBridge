@@ -206,6 +206,7 @@ export function RemotePanel({
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label="Carpeta superior"
                 disabled={!remote || !path}
                 onClick={() => state.setPath(parentOf(path))}
               >
@@ -219,6 +220,7 @@ export function RemotePanel({
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label="Nueva carpeta"
                 disabled={!remote}
                 onClick={() => setNewFolder(true)}
               >
@@ -232,6 +234,7 @@ export function RemotePanel({
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label={view === 'list' ? 'Ver en cuadrícula' : 'Ver en lista'}
                 onClick={() => setView(view === 'list' ? 'grid' : 'list')}
               >
                 {view === 'list' ? <Grid2x2 /> : <List />}
@@ -241,7 +244,13 @@ export function RemotePanel({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm" disabled={!remote} onClick={refresh}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Refrescar"
+                disabled={!remote}
+                onClick={refresh}
+              >
                 <RefreshCw className={listing.isFetching ? 'animate-spin' : undefined} />
               </Button>
             </TooltipTrigger>

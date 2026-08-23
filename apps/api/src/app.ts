@@ -16,6 +16,7 @@ import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { fsRoutes } from './routes/fs.js';
 import { jobRoutes } from './routes/jobs.js';
+import { logRoutes } from './routes/logs.js';
 import { settingsRoutes } from './routes/settings.js';
 import { remoteRoutes } from './routes/remotes.js';
 import { transferRoutes } from './routes/transfers.js';
@@ -147,12 +148,27 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(transferRoutes);
   await app.register(jobRoutes);
   await app.register(settingsRoutes);
+  await app.register(logRoutes);
   await app.register(websocketRoutes);
 
   // One ticker drives both finishing runs and pushing progress to the clients.
   app.stats.start();
   app.scheduler.start();
   app.addHook('onClose', async () => app.scheduler.stop());
+
+  // Daily retention sweep for logs and finished runs.
+  const purge = () => {
+    const retentionDays = app.settings.get().historyRetentionDays;
+    const runsRemoved = app.runs.purge(retentionDays);
+    const logsRemoved = app.logs.purge(retentionDays);
+    if (runsRemoved > 0 || logsRemoved > 0) {
+      app.log.info({ runsRemoved, logsRemoved, retentionDays }, 'Purga de retención completada');
+    }
+  };
+  purge();
+  const retention = setInterval(purge, 24 * 3600_000);
+  retention.unref();
+  app.addHook('onClose', async () => clearInterval(retention));
   // Re-assert the configured global bandwidth limit on the daemon.
   void app.bandwidth.applyDefault();
   app.addHook('onClose', async () => app.stats.stop());

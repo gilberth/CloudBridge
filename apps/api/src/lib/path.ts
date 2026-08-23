@@ -54,6 +54,7 @@ export function joinPath(base: string, ...parts: string[]): string {
   const clean = sanitizePath(base);
   const suffix = parts.join('/');
   if (!suffix) return clean;
+  if (!clean) return sanitizePath(suffix);
   return sanitizePath(clean === '/' ? `/${suffix}` : `${clean}/${suffix}`);
 }
 
