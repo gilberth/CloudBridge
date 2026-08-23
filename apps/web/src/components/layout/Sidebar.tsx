@@ -5,6 +5,7 @@ import {
   ChevronsRight,
   Cloud,
   FolderTree,
+  LogOut,
   Moon,
   ScrollText,
   Settings as SettingsIcon,
@@ -14,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { RemotesNav } from './RemotesNav';
 
@@ -34,6 +36,7 @@ export function Sidebar({
   onToggleCollapsed: () => void;
 }) {
   const { theme, toggle } = useTheme();
+  const { user, logout } = useAuth();
 
   return (
     <aside
@@ -80,6 +83,19 @@ export function Sidebar({
         <Button variant="ghost" size="icon-sm" onClick={toggle} aria-label="Cambiar tema">
           {theme === 'dark' ? <Sun /> : <Moon />}
         </Button>
+        <Tooltip disableHoverableContent>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void logout()}
+              aria-label="Cerrar sesión"
+            >
+              <LogOut />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">Cerrar sesión ({user?.username})</TooltipContent>
+        </Tooltip>
         <Button
           variant="ghost"
           size="icon-sm"

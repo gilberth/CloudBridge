@@ -5,10 +5,19 @@ import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
 import { env } from './config/env.js';
+import { openDatabase } from './db/index.js';
+import { runMigrations } from './db/migrate.js';
+import { seedAdmin } from './db/seed.js';
 import { HttpError } from './lib/errors.js';
 import { createLogController, loggerOptions } from './lib/logger.js';
+import { authPlugin } from './plugins/auth.js';
 import { RcloneClient, RcloneError, RcloneUnavailableError } from './rclone/client.js';
+import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { remoteRoutes } from './routes/remotes.js';
+import { LogService } from './services/logs.js';
+import { RemotesService } from './services/remotes.js';
+import { SettingsService } from './services/settings.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -25,22 +34,43 @@ export async function buildApp(): Promise<FastifyInstance> {
   const config = env();
   const app = Fastify({
     logger: loggerOptions(),
+    logController: createLogController(),
     trustProxy: config.TRUST_PROXY,
     bodyLimit: 2 * 1024 * 1024,
-    logController: createLogController(),
   });
 
   app.decorate('appVersion', await readVersion());
-  app.decorate(
-    'rclone',
-    new RcloneClient({
-      url: config.RCLONE_RC_URL,
-      user: config.RCLONE_RC_USER,
-      password: config.RCLONE_RC_PASS,
-      timeoutMs: config.RCLONE_TIMEOUT_MS,
-    }),
-  );
 
+  // ------------------------------------------------------------ database ---
+  const { db, sqlite } = openDatabase(config.DATABASE_PATH);
+  app.decorate('db', db);
+  runMigrations(db);
+  app.addHook('onClose', async () => sqlite.close());
+
+  // ------------------------------------------------------------ services ---
+  app.decorate('logs', new LogService(db, app.log));
+  app.decorate('settings', new SettingsService(db, config));
+
+  const buildClient = (override?: { url: string; user: string; password: string }) => {
+    const connection = override ?? app.settings.connection();
+    return new RcloneClient({
+      url: connection.url,
+      user: connection.user,
+      password: connection.password,
+      timeoutMs: config.RCLONE_TIMEOUT_MS,
+    });
+  };
+  app.decorate('rclone', buildClient());
+  app.decorate('reloadRclone', (override?: { url: string; user: string; password: string }) => {
+    app.rclone = buildClient(override);
+    app.remotes?.invalidate();
+    return app.rclone;
+  });
+  app.decorate('remotes', new RemotesService(app));
+
+  await seedAdmin(db, { username: config.ADMIN_USER, password: config.ADMIN_PASSWORD }, app.log);
+
+  // ------------------------------------------------------- error handler ---
   app.setErrorHandler((raw: FastifyError, request, reply) => {
     const error: unknown = raw;
     if (error instanceof HttpError) {
@@ -56,9 +86,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       });
     }
     if (error instanceof RcloneUnavailableError) {
-      return reply
-        .status(503)
-        .send({ error: 'rclone_unavailable', message: error.message, details: { endpoint: error.endpoint } });
+      return reply.status(503).send({
+        error: 'rclone_unavailable',
+        message: error.message,
+        details: { endpoint: error.endpoint },
+      });
     }
     if (error instanceof RcloneError) {
       return reply
@@ -79,7 +111,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     });
   });
 
+  // -------------------------------------------------------------- routes ---
+  await app.register(authPlugin);
   await app.register(healthRoutes);
+  await app.register(authRoutes);
+  await app.register(remoteRoutes);
 
   if (config.WEB_DIST) {
     const root = resolve(config.WEB_DIST);

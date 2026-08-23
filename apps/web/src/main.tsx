@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from '@/hooks/useTheme';
+import { AuthProvider } from '@/hooks/useAuth';
 import { App } from '@/App';
 import './index.css';
 
@@ -27,7 +28,9 @@ createRoot(container).render(
       <ThemeProvider>
         <TooltipProvider delayDuration={300}>
           <BrowserRouter>
-            <App />
+            <AuthProvider>
+              <App />
+            </AuthProvider>
           </BrowserRouter>
           <Toaster position="bottom-right" richColors closeButton toastOptions={{ duration: 5000 }} />
         </TooltipProvider>

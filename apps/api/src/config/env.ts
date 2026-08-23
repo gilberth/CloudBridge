@@ -35,6 +35,9 @@ const envSchema = z.object({
   /** Directory holding the built web client; empty disables static serving. */
   WEB_DIST: z.string().default(''),
 
+  /** Container timezone; also the scheduler default until Settings overrides it. */
+  TZ: z.string().min(1).max(64).default('UTC'),
+
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   TRUST_PROXY: booleanish.default(false),
 

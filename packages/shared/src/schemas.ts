@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { JOB_MODES, LOG_LEVELS } from './common.js';
+
+/** Literal tuples so the inferred types stay narrow (LogLevel, JobMode). */
+const logLevelEnum = z.enum(['debug', 'info', 'warn', 'error']);
+const jobModeEnum = z.enum(['copy', 'sync', 'move', 'bisync']);
 
 /**
  * A remote name as accepted by rclone: no colon, no slash, no leading dash.
@@ -127,7 +130,7 @@ export const jobDestinationSchema = remotePathSchema;
 
 export const jobInputSchema = z.object({
   name: z.string().min(1).max(200),
-  mode: z.enum(JOB_MODES as [string, ...string[]]),
+  mode: jobModeEnum,
   source: remotePathSchema,
   destinations: z.array(jobDestinationSchema).min(1).max(20),
   options: transferOptionsSchema,
@@ -151,7 +154,7 @@ export const jobRunSchema = z.object({
 });
 
 export const logQuerySchema = z.object({
-  level: z.enum(LOG_LEVELS as [string, ...string[]]).optional(),
+  level: logLevelEnum.optional(),
   jobId: z.string().max(64).optional(),
   runId: z.string().max(64).optional(),
   search: z.string().max(512).optional(),
@@ -174,7 +177,7 @@ export const settingsUpdateSchema = z.object({
       transfers: z.number().int().min(1).max(64),
       checkers: z.number().int().min(1).max(256),
       bwlimit: z.string().max(64).nullable(),
-      logLevel: z.enum(LOG_LEVELS as [string, ...string[]]),
+      logLevel: logLevelEnum,
     })
     .optional(),
   historyRetentionDays: z.number().int().min(1).max(3650).optional(),
