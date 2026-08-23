@@ -11,7 +11,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { ArrowLeft, ArrowRight, Files, GitCompare, LoaderCircle } from 'lucide-react';
+import { Files, GitCompare, LoaderCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CompareCategory, CompareResult, FsEntry } from '@cloudbridge/shared';
 import { ApiError, api } from '@/lib/api';
@@ -187,6 +187,7 @@ export default function ExplorerPage() {
         <PageHeader
           title="Explorer"
           description="Arrastra la selección al otro panel, o usa los botones centrales."
+          className="px-2"
           actions={
             <>
               {!wide && (
@@ -245,36 +246,42 @@ export default function ExplorerPage() {
               <div className="absolute inset-y-0 -left-1 -right-1 cursor-col-resize" />
             </PanelResizeHandle>
 
-            <div className="flex w-12 shrink-0 flex-col items-center justify-center gap-1 border-x border-border bg-background px-1">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Copiar hacia la derecha"
-                title="Copiar hacia la derecha"
+            <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-1 border-x border-border bg-background px-1.5">
+              <CentreAction
+                label="Copiar hacia la derecha"
                 disabled={!bothReady}
                 onClick={() => propose('left', 'copy')}
               >
-                <ArrowRight />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Copiar hacia la izquierda"
-                title="Copiar hacia la izquierda"
+                Copiar →
+              </CentreAction>
+              <CentreAction
+                label="Copiar hacia la izquierda"
                 disabled={!bothReady}
                 onClick={() => propose('right', 'copy')}
               >
-                <ArrowLeft />
-              </Button>
+                ← Copiar
+              </CentreAction>
               <div className="my-1 h-px w-5 bg-border" />
-              <CentreAction disabled={!bothReady} onClick={() => propose('left', 'move')}>
+              <CentreAction
+                label="Mover hacia la derecha"
+                disabled={!bothReady}
+                onClick={() => propose('left', 'move')}
+              >
                 Mover →
               </CentreAction>
-              <CentreAction disabled={!bothReady} onClick={() => propose('right', 'move')}>
+              <CentreAction
+                label="Mover hacia la izquierda"
+                disabled={!bothReady}
+                onClick={() => propose('right', 'move')}
+              >
                 ← Mover
               </CentreAction>
               <div className="my-1 h-px w-5 bg-border" />
-              <CentreAction disabled={!bothReady} onClick={() => propose('left', 'sync')}>
+              <CentreAction
+                label="Sincronizar hacia la derecha"
+                disabled={!bothReady}
+                onClick={() => propose('left', 'sync')}
+              >
                 Sync →
               </CentreAction>
             </div>
@@ -339,10 +346,12 @@ function DropZone({
 }
 
 function CentreAction({
+  label,
   disabled,
   onClick,
   children,
 }: {
+  label: string;
   disabled: boolean;
   onClick: () => void;
   children: React.ReactNode;
@@ -351,7 +360,9 @@ function CentreAction({
     <Button
       variant="ghost"
       size="sm"
-      className="h-6 w-full px-0 text-[10px]"
+      className="h-7 w-full px-1 text-[10px] leading-none"
+      aria-label={label}
+      title={label}
       disabled={disabled}
       onClick={onClick}
     >
