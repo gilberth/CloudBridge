@@ -15,6 +15,8 @@ import { RcloneClient, RcloneError, RcloneUnavailableError } from './rclone/clie
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { fsRoutes } from './routes/fs.js';
+import { jobRoutes } from './routes/jobs.js';
+import { settingsRoutes } from './routes/settings.js';
 import { remoteRoutes } from './routes/remotes.js';
 import { transferRoutes } from './routes/transfers.js';
 import { websocketRoutes } from './routes/ws.js';
@@ -22,6 +24,9 @@ import { FsService } from './services/fs.js';
 import { LogService } from './services/logs.js';
 import { RunsService } from './services/runs.js';
 import { BandwidthManager } from './services/bandwidth.js';
+import { JobsService } from './services/jobs.js';
+import { NotificationService } from './services/notifications.js';
+import { Scheduler } from './services/scheduler.js';
 import { StatsBroadcaster } from './services/stats.js';
 import { TransferService } from './services/transfers.js';
 import { RemotesService } from './services/remotes.js';
@@ -80,6 +85,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.decorate('bandwidth', new BandwidthManager(app));
   app.decorate('transfers', new TransferService(app));
   app.decorate('stats', new StatsBroadcaster(app, config.STATS_INTERVAL_MS));
+  app.decorate('notifications', new NotificationService(app));
+  app.decorate('jobs', new JobsService(app));
+  app.decorate('scheduler', new Scheduler(app));
 
   // Anything still marked as running belongs to a previous container.
   const interrupted = app.runs.markInterrupted();
@@ -137,10 +145,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(remoteRoutes);
   await app.register(fsRoutes);
   await app.register(transferRoutes);
+  await app.register(jobRoutes);
+  await app.register(settingsRoutes);
   await app.register(websocketRoutes);
 
   // One ticker drives both finishing runs and pushing progress to the clients.
   app.stats.start();
+  app.scheduler.start();
+  app.addHook('onClose', async () => app.scheduler.stop());
   // Re-assert the configured global bandwidth limit on the daemon.
   void app.bandwidth.applyDefault();
   app.addHook('onClose', async () => app.stats.stop());

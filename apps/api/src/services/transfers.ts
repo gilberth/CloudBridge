@@ -338,7 +338,24 @@ export class TransferService {
           { runId: run.id, jobId: run.jobId },
         );
 
-        this.app.stats?.emitRunFinished(this.app.runs.get(run.id));
+        const finished = this.app.runs.get(run.id);
+        this.app.stats?.emitRunFinished(finished);
+
+        if (finished.jobId) {
+          const job = (() => {
+            try {
+              return this.app.jobs.get(finished.jobId!);
+            } catch {
+              return null;
+            }
+          })();
+          void this.app.notifications.send(
+            job,
+            finished,
+            failed.length > 0 ? 'error' : 'success',
+            errorMessage,
+          );
+        }
       } catch (error) {
         if (error instanceof RcloneUnavailableError) return; // Retry on the next tick.
         this.app.log.warn({ err: error, runId: run.id }, 'No se pudo reconciliar la ejecución');

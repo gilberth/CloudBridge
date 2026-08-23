@@ -10,6 +10,7 @@ import type { LogService } from './services/logs.js';
 import type { BandwidthManager } from './services/bandwidth.js';
 import type { TransferService } from './services/transfers.js';
 import type { JobsService } from './services/jobs.js';
+import type { NotificationService } from './services/notifications.js';
 import type { Scheduler } from './services/scheduler.js';
 import type { StatsBroadcaster } from './services/stats.js';
 
@@ -30,6 +31,7 @@ declare module 'fastify' {
     bandwidth: BandwidthManager;
     jobs: JobsService;
     scheduler: Scheduler;
+    notifications: NotificationService;
     stats: StatsBroadcaster;
 
     issueSession: (
