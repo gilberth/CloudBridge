@@ -182,7 +182,27 @@ export class RcloneClient {
     const deadline = Date.now() + maxWaitMs;
 
     while (Date.now() < deadline) {
-      const status = await this.call<RcJobStatus>('job/status', { jobid }, { timeoutMs: 10_000 });
+      // A single slow `job/status` round-trip (daemon momentarily busy, a GC
+      // pause, a blip on the internal network) doesn't mean the underlying
+      // job failed — it's still running fine in rclone. Retry the poll itself
+      // a few times before giving up, so a transient hiccup doesn't abort a
+      // listing that would otherwise have finished.
+      let status: RcJobStatus | undefined;
+      let pollError: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          status = await this.call<RcJobStatus>('job/status', { jobid }, { timeoutMs: 10_000 });
+          pollError = undefined;
+          break;
+        } catch (error) {
+          pollError = error;
+          if (!(error instanceof RcloneUnavailableError)) throw error;
+        }
+      }
+      if (!status) {
+        await this.jobStop(jobid).catch(() => undefined);
+        throw pollError;
+      }
       if (status.finished) {
         if (!status.success) {
           throw new RcloneError(endpoint, 200, status.error || `${endpoint} falló en rclone`, status);

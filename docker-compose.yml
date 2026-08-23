@@ -13,6 +13,19 @@ services:
       - --config=/config/rclone/rclone.conf
       - --cache-dir=/cache
       - --log-level=${RCLONE_LOG_LEVEL:-INFO}
+      # CloudBridge lists via async rc jobs (job/start + poll job/status)
+      # rather than one blocking call. rclone keeps each finished job's full
+      # output (e.g. every entry from a huge Drive listing) in memory until
+      # it expires; on a small host that accumulates across a busy session
+      # and can exhaust RAM. Expire aggressively since nothing reads a job's
+      # result after CloudBridge has already consumed it once.
+      - --rc-job-expire-duration=5m
+      - --rc-job-expire-interval=1m
+    # Safety net: if rclone still grows unbounded (VFS/dir cache, a stuck
+    # job, a future leak), Docker OOM-kills just this container instead of
+    # the whole LXC running out of memory and freezing (which also breaks
+    # `docker`/`pct exec` themselves, since dockerd is starved too).
+    mem_limit: 1200m
     environment:
       # Credentials go through the environment, not the command line, so they
       # do not show up in `docker top` / `ps`. rclone maps RCLONE_RC_USER and
