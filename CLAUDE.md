@@ -18,7 +18,10 @@ Monorepo con **pnpm workspaces**:
 ## Gestor de paquetes
 
 Este repo usa **pnpm workspaces** (`pnpm-lock.yaml`, `pnpm-workspace.yaml` y dependencias internas con
-`workspace:*`). Usa `ppnpm install`, `ppnpm run <script>` y `pnpm --filter @cloudbridge/<paquete> <script>`.
+`workspace:*`). Usa `pnpm install`, `pnpm run <script>` y `pnpm --filter @cloudbridge/<paquete> <script>`.
+Cada workspace debe declarar directamente lo que usa: un `node_modules` antiguo puede ocultar dependencias
+faltantes que el build limpio de Docker sí detecta (p. ej. `apps/web/tsconfig.node.json` requiere
+`@types/node` en `apps/web/package.json`).
 
 ## Comandos
 
@@ -43,9 +46,8 @@ pnpm --filter @cloudbridge/api exec vitest run src/lib/__tests__/path.test.ts
 si `packages/shared` no está compilado, `pnpm run test` falla con "Failed to resolve entry for package
 '@cloudbridge/shared'". Corre `pnpm run build:shared` antes si no venís de `pnpm run dev`/`pnpm run build`.
 
-`pnpm run typecheck` tiene ~80 errores preexistentes en `apps/web` (no relacionados con tooling nuevo,
-confirmado con `git stash`) — no son introducidos por cambios de configuración; si tu tarea no toca esos
-archivos, no los arrastres a tu diff sin que te lo pidan.
+`pnpm run typecheck` debe terminar con código 0 en los tres workspaces; no aceptar errores de `apps/web`
+como baseline. Para reproducir el entorno de CI, validar también `pnpm run build` tras cambiar dependencias.
 
 E2E (Playwright) necesita el stack corriendo y dos remotos `local` (`e2e-src`/`e2e-dst`) creados de
 antemano — pasos completos en el README, sección "End-to-end (Playwright)". No lo lances sin haber leído
@@ -84,7 +86,8 @@ lint. Antes de dar una tarea por terminada corre `pnpm run typecheck` y `pnpm ru
   operación (rclone omite archivos ya idénticos, pero se pierde el progreso del archivo en vuelo).
 - **Drive → Drive** solo fuerza `server_side_across_configs=true` para archivos individuales, donde un 404
   puede reintentarse sin esa opción. Los trabajos de carpetas usan el comportamiento normal de rclone para
-  evitar que la cuenta destino intente leer IDs pertenecientes únicamente a la cuenta origen.
+  evitar que la cuenta destino intente leer IDs pertenecientes únicamente a la cuenta origen. La regresión
+  está cubierta en `apps/api/src/services/__tests__/transfers.test.ts`.
 
 ## Variables de entorno clave
 
@@ -120,10 +123,12 @@ Corre en un LXC de Proxmox (id **131**, hostname `rclonegui`, IP `10.10.10.214`,
 escaso, tenerlo presente en cualquier diagnóstico de rendimiento). Acceso vía SSH al host Proxmox (`pct exec
 131 -- <comando>`), no hay SSH directo al LXC configurado. `/root/CloudBridge` ahí es un `git clone` normal
 de este repo; `docker-compose.yml` apunta a `ghcr.io/gilberth/cloudbridge:latest` (`build:` es solo fallback
-local). Redeploy tras un push a `main`: esperar a que termine el workflow "Build and publish container
-image" (`gh run list`/`gh run watch`) y luego `cd /root/CloudBridge && git pull && docker compose pull &&
-docker compose up -d`. El token/config de los remotos rclone vive en el volumen `rclone-config`, no en el
-proceso — sobrevive a redeploys y restarts del contenedor `rclone` sin problema.
+local). Redeploy tras un push a `main`: esperar a que el workflow "Build and publish container image"
+termine en `success` (`gh run list`/`gh run watch`); luego ejecutar en el LXC `git -C /root/CloudBridge pull
+--ff-only origin main`, `docker compose pull cloudbridge` y `docker compose up -d --no-deps cloudbridge`.
+Así se recrea solo la app y no el daemon rclone. Verificar la revisión OCI con `docker inspect`, estado
+`healthy`, `/api/health` y logs de arranque. El token/config de los remotos vive en `rclone-config` y
+sobrevive a redeploys.
 
 Credenciales (`RCLONE_RC_USER`/`PASS`, `ADMIN_USER`/`PASSWORD`) están en `/root/CloudBridge/.env` en el LXC;
 para pegarle directo al daemon rclone sin pasar por la app, su IP en la red docker interna
