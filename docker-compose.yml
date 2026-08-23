@@ -52,6 +52,11 @@ services:
       RCLONE_RC_URL: http://rclone:5572
       RCLONE_RC_USER: ${RCLONE_RC_USER:?define RCLONE_RC_USER in .env}
       RCLONE_RC_PASS: ${RCLONE_RC_PASS:?define RCLONE_RC_PASS in .env}
+      # Per-call timeout to the rclone daemon. Raise this if you hit "El daemon
+      # rclone no respondió" browsing a remote with a very large or slow root
+      # (a big Team/Shared Drive, a bucket with many objects, a cold OAuth
+      # token refresh).
+      RCLONE_TIMEOUT_MS: ${RCLONE_TIMEOUT_MS:-30000}
       RCLONE_CONFIG_PATH: /config/rclone/rclone.conf
       JWT_SECRET: ${JWT_SECRET:?define JWT_SECRET in .env}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
