@@ -37,7 +37,8 @@ export function fsAndRemote(
 ): { fs: string; remote: string } {
   const clean = sanitizePath(path);
   const index = clean.lastIndexOf('/');
-  const dir = index === -1 ? '' : clean.slice(0, index);
+  // `/a` splits into the root `/` and `a`, not into an empty parent.
+  const dir = index === -1 ? '' : index === 0 ? '/' : clean.slice(0, index);
   const leaf = index === -1 ? clean : clean.slice(index + 1);
   return { fs: fsPath(remote, dir, options), remote: leaf };
 }

@@ -68,10 +68,14 @@ export const fsListQuerySchema = z.object({
 
 export const fsMkdirSchema = remotePathSchema;
 
+/** Deleting needs to know what each entry is: files and directories use
+ *  different rclone endpoints (`operations/deletefile` vs `operations/purge`). */
 export const fsDeleteSchema = z.object({
   remote: remoteNameSchema,
-  /** Each entry is a path relative to the remote root. */
-  paths: z.array(remotePathStringSchema).min(1).max(5000),
+  entries: z
+    .array(z.object({ path: remotePathStringSchema, isDir: z.boolean().default(false) }))
+    .min(1)
+    .max(5000),
 });
 
 export const fsRenameSchema = z.object({

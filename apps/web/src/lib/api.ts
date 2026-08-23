@@ -128,12 +128,13 @@ export const api = {
     list: (remote: string, path: string, recurse = false) =>
       request<FsListing>(`/api/fs/list${qs({ remote, path, recurse })}`),
     mkdir: (remote: string, path: string) => post<void>('/api/fs/mkdir', { remote, path }),
-    remove: (remote: string, paths: string[]) => post<void>('/api/fs/delete', { remote, paths }),
+    remove: (remote: string, entries: { path: string; isDir: boolean }[]) =>
+      post<void>('/api/fs/delete', { remote, entries }),
     rename: (remote: string, from: string, to: string, isDir: boolean) =>
       post<void>('/api/fs/rename', { remote, from, to, isDir }),
     size: (remote: string, path: string) =>
       request<SizeResult>(`/api/fs/size${qs({ remote, path })}`),
-    transfer: (body: unknown) => post<Run>('/api/fs/transfer', body),
+    transfer: (mode: 'copy' | 'move' | 'sync', body: unknown) => post<Run>(`/api/fs/${mode}`, body),
     compare: (body: unknown) => post<CompareResult>('/api/fs/compare', body),
     downloadUrl: (remote: string, path: string) => `/api/fs/download${qs({ remote, path })}`,
   },

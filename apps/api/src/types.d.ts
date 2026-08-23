@@ -4,6 +4,7 @@ import type { Db } from './db/index.js';
 import type { RcloneClient } from './rclone/client.js';
 import type { SettingsService } from './services/settings.js';
 import type { RemotesService } from './services/remotes.js';
+import type { FsService } from './services/fs.js';
 import type { RunsService } from './services/runs.js';
 import type { LogService } from './services/logs.js';
 import type { TransferService } from './services/transfers.js';
@@ -21,6 +22,7 @@ declare module 'fastify' {
     reloadRclone: (override?: { url: string; user: string; password: string }) => RcloneClient;
     settings: SettingsService;
     remotes: RemotesService;
+    fs: FsService;
     runs: RunsService;
     logs: LogService;
     transfers: TransferService;

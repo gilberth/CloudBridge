@@ -14,8 +14,13 @@ import { authPlugin } from './plugins/auth.js';
 import { RcloneClient, RcloneError, RcloneUnavailableError } from './rclone/client.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { fsRoutes } from './routes/fs.js';
 import { remoteRoutes } from './routes/remotes.js';
+import { transferRoutes } from './routes/transfers.js';
+import { FsService } from './services/fs.js';
 import { LogService } from './services/logs.js';
+import { RunsService } from './services/runs.js';
+import { TransferService } from './services/transfers.js';
 import { RemotesService } from './services/remotes.js';
 import { SettingsService } from './services/settings.js';
 
@@ -67,6 +72,15 @@ export async function buildApp(): Promise<FastifyInstance> {
     return app.rclone;
   });
   app.decorate('remotes', new RemotesService(app));
+  app.decorate('fs', new FsService(app));
+  app.decorate('runs', new RunsService(db));
+  app.decorate('transfers', new TransferService(app));
+
+  // Anything still marked as running belongs to a previous container.
+  const interrupted = app.runs.markInterrupted();
+  if (interrupted > 0) {
+    app.log.warn({ interrupted }, 'Ejecuciones marcadas como interrumpidas tras el reinicio');
+  }
 
   await seedAdmin(db, { username: config.ADMIN_USER, password: config.ADMIN_PASSWORD }, app.log);
 
@@ -116,6 +130,16 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(healthRoutes);
   await app.register(authRoutes);
   await app.register(remoteRoutes);
+  await app.register(fsRoutes);
+  await app.register(transferRoutes);
+
+  // Poll rclone for finished jobs so runs stop being "running" once they end.
+  // Phase 4 layers the websocket broadcast on top of this same tick.
+  const reconcile = setInterval(() => {
+    void app.transfers.reconcile();
+  }, config.STATS_INTERVAL_MS);
+  reconcile.unref();
+  app.addHook('onClose', async () => clearInterval(reconcile));
 
   if (config.WEB_DIST) {
     const root = resolve(config.WEB_DIST);
