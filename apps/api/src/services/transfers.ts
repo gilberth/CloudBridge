@@ -203,16 +203,20 @@ export class TransferService {
           const name = sanitizeName(item.name);
           const srcRemote = joinPath(source.path, name);
           const dstRemote = joinPath(destination.path, name);
-          try {
-            jobIds.push(
-              await this.copyOrMoveFileWithRetry(mode, srcFs, srcRemote, dstFs, dstRemote, call),
-            );
-          } catch (error) {
-            if (!options.ignoreErrors) throw error;
-            // Counted via rclone's own core/stats for this group already
-            // (the failed attempt still ran through rclone's accounting) —
-            // skip to the next item instead of aborting the whole selection.
-          }
+          const { jobid, error } = await this.copyOrMoveFileWithRetry(
+            mode,
+            srcFs,
+            srcRemote,
+            dstFs,
+            dstRemote,
+            call,
+          );
+          // Always keep the jobid, success or not: `reconcile()` finalises a
+          // run by polling `rcloneJobIds` — an empty array (e.g. every item
+          // failed and got swallowed by ignoreErrors) leaves the run stuck
+          // in "running" forever, since nothing is left to poll.
+          jobIds.push(jobid);
+          if (error && !options.ignoreErrors) throw error;
         }
       }
       return jobIds;
@@ -267,23 +271,24 @@ export class TransferService {
     dstFs: string,
     dstRemote: string,
     call: { group: string; config: Record<string, unknown> },
-  ): Promise<number> {
+  ): Promise<{ jobid: number; error?: RcloneError | RcloneUnavailableError }> {
     const endpoint = mode === 'move' ? 'operations/movefile' : 'operations/copyfile';
     const params = { srcFs, srcRemote, dstFs, dstRemote };
     const attempts = 3;
+    let jobid = -1;
     for (let attempt = 1; attempt <= attempts; attempt++) {
-      const jobid = await this.rclone.callAsync(endpoint, params, call);
+      jobid = await this.rclone.callAsync(endpoint, params, call);
       try {
         await this.waitForJob(jobid, endpoint);
-        return jobid;
+        return { jobid };
       } catch (error) {
         const retryable =
           error instanceof RcloneError && /file not found/i.test(error.message) && attempt < attempts;
-        if (!retryable) throw error;
+        if (!retryable) return { jobid, error: error as RcloneError | RcloneUnavailableError };
         await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
       }
     }
-    throw new Error('unreachable');
+    return { jobid };
   }
 
   /** Poll `job/status` until an already-launched job finishes. */
