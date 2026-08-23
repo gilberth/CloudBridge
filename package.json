@@ -1,0 +1,32 @@
+{
+  "name": "cloudbridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted multi-cloud manager powered by the rclone RC API",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "npm run build -w @cloudbridge/shared && npm run build -w @cloudbridge/api && npm run build -w @cloudbridge/web",
+    "build:shared": "npm run build -w @cloudbridge/shared",
+    "dev": "npm run build:shared && concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w @cloudbridge/api",
+    "dev:web": "npm run dev -w @cloudbridge/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test -w @cloudbridge/api",
+    "test:e2e": "npm run test:e2e -w @cloudbridge/web",
+    "db:generate": "npm run db:generate -w @cloudbridge/api",
+    "db:migrate": "npm run db:migrate -w @cloudbridge/api",
+    "seed": "npm run seed -w @cloudbridge/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,78 @@
+services:
+  # rclone runs as a daemon speaking the rc API. It is never published to the
+  # host: only the cloudbridge container can reach it over the internal network.
+  rclone:
+    image: rclone/rclone:latest
+    container_name: cloudbridge-rclone
+    restart: unless-stopped
+    command:
+      - rcd
+      - --rc-addr=0.0.0.0:5572
+      - --rc-serve
+      - --rc-web-gui-no-open-browser
+      - --config=/config/rclone/rclone.conf
+      - --cache-dir=/cache
+      - --log-level=${RCLONE_LOG_LEVEL:-INFO}
+    environment:
+      # Credentials go through the environment, not the command line, so they
+      # do not show up in `docker top` / `ps`. rclone maps RCLONE_RC_USER and
+      # RCLONE_RC_PASS onto --rc-user / --rc-pass automatically.
+      RCLONE_RC_USER: ${RCLONE_RC_USER:?define RCLONE_RC_USER in .env}
+      RCLONE_RC_PASS: ${RCLONE_RC_PASS:?define RCLONE_RC_PASS in .env}
+    volumes:
+      - rclone-config:/config/rclone
+      - rclone-cache:/cache
+    networks:
+      - cloudbridge
+    healthcheck:
+      test: ['CMD', 'rclone', 'rc', '--url', 'http://localhost:5572', 'core/version']
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  cloudbridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cloudbridge:latest
+    container_name: cloudbridge
+    restart: unless-stopped
+    depends_on:
+      rclone:
+        condition: service_healthy
+    ports:
+      # Publish only this service; put Traefik / Cloudflare Tunnel in front.
+      - '${CLOUDBRIDGE_PORT:-8080}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      DATABASE_PATH: /data/cloudbridge.db
+      WEB_DIST: /app/apps/web/dist
+      RCLONE_RC_URL: http://rclone:5572
+      RCLONE_RC_USER: ${RCLONE_RC_USER:?define RCLONE_RC_USER in .env}
+      RCLONE_RC_PASS: ${RCLONE_RC_PASS:?define RCLONE_RC_PASS in .env}
+      RCLONE_CONFIG_PATH: /config/rclone/rclone.conf
+      JWT_SECRET: ${JWT_SECRET:?define JWT_SECRET in .env}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?define ADMIN_PASSWORD in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - cloudbridge-data:/data
+      # Read-only: rclone owns this file, CloudBridge only reads it to export.
+      - rclone-config:/config/rclone:ro
+    networks:
+      - cloudbridge
+
+networks:
+  cloudbridge:
+    driver: bridge
+
+volumes:
+  cloudbridge-data:
+  rclone-config:
+  rclone-cache:
