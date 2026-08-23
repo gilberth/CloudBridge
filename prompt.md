@@ -1,7 +1,3 @@
-# Prompt: construir "CloudBridge" — MultCloud/RcloneView selfhosted
-
-> Copiar y pegar completo en Claude Code (o el agente que uses). Ajusta los valores marcados con `<<< >>>` antes de enviarlo.
-
 ---
 
 ## Contexto y objetivo
