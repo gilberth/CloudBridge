@@ -14,7 +14,11 @@ const MAX_PATH_LENGTH = 4096;
  * safety comes from rejecting `..`, not from forbidding the leading slash.
  */
 export function sanitizePath(input: string | undefined | null): string {
-  const raw = (input ?? '').trim();
+  // No `.trim()` here: a trailing/leading space on the *last* path segment is
+  // a legitimate character in a real remote name (Google Drive allows it),
+  // and trimming the whole string silently mangles it into a path rclone
+  // can't find — see "directory not found" on folders like "Foo Bar ".
+  const raw = input ?? '';
   if (raw.length > MAX_PATH_LENGTH) throw badRequest('La ruta es demasiado larga');
   if (raw.includes('\0')) throw badRequest('La ruta contiene caracteres inválidos');
 
