@@ -149,15 +149,18 @@ crecer sin control, Docker mata solo el contenedor `rclone` en vez de ahogar tod
 que un solo poll de `job/status` que tarda >10s ya no aborte el listado completo (`callAsyncAndWait` en
 `apps/api/src/rclone/client.ts` reintenta 2 veces antes de rendirse).
 
-**Causa raíz real de por qué la memoria subía tanto, sin confirmar del todo**: se encontró un job async de
-`operations/list` (`job/33` en esa sesión) corriendo **recursivo** (`opt.recurse`) sobre `ulima_drive:` (un
-remoto Drive de 2TB) — 453.300 items listados en 169s y sin terminar, bloqueando el daemon para el resto de
-requests. Se lo mató con `job/stop`. **Ningún código de este repo pasa `recurse: true` a
-`RcloneClient.list()`** (se revisó `services/fs.ts`, `services/remotes.ts`, `routes/fs.ts`; el único caller
-con `recurse` configurable es el diff de comparación de carpetas al crear un job de sync,
-`services/fs.ts:140-149`, y `GET /api/jobs` devolvía `[]` — no hay ningún job configurado que lo explique).
-Si esto se repite: `pct exec 131 -- <curl al 172.18.0.2:5572>/job/list` para ver `runningIds`, revisar
-`core/stats?group=job/<id>` (si `listed` crece sin parar y `elapsedTime` es alto, es el culpable), y
-`job/stop` para liberarlo. Vale la pena instrumentar/loggear qué endpoint dispara cada `_async` job para
-poder identificar el origen la próxima vez (`callAsync`/`callAsyncAndWait` en `client.ts` no registran hoy
-qué request de la app originó cada `jobid`).
+**Causa raíz real (encontrada, confirmada y arreglada)**: `packages/shared/src/schemas.ts`, `fsListQuerySchema`
+tenía `recurse: z.coerce.boolean().default(false)`. **`z.coerce.boolean()` es un footgun clásico de Zod**:
+usa `Boolean(valor)`, y en JS `Boolean("false")` es `true` (cualquier string no vacío es truthy) — coerciona
+el string `"false"` a `true`. El frontend (`apps/web/src/lib/api.ts`, helper `qs()`) manda `recurse=false`
+explícito en el query string de cada listado (no omite valores `false`), así que **todo listado del
+Explorer ha sido recursivo desde siempre**, en todos los remotos, sin que nadie lo pidiera. Para remotos
+chicos pasaba desapercibido (la recursión terminaba rápido); contra `ulima_drive` (Drive de 2TB, árbol
+profundo) generaba jobs que tardaban minutos, nunca terminaban desde la UI, y acumulaban memoria sin límite
+en rclone — la causa real detrás del incidente de memoria de esta misma sesión, no solo un síntoma
+secundario. Se encontró subiendo `RCLONE_LOG_LEVEL=DEBUG` temporalmente y grepeando `docker logs
+cloudbridge-rclone | grep 'rc: "operations/list"'`, que loggea los parámetros reales de cada llamada RC
+(`opt.recurse` incluido) — a nivel `INFO` esto es invisible. **Fix**: `recurse:
+z.preprocess((v) => v === 'true' || v === true, z.boolean()).default(false)` en vez de `z.coerce.boolean()`.
+Regla general para este repo: **nunca usar `z.coerce.boolean()` en un schema que valida query strings** —
+usar el patrón `z.preprocess` de arriba, o `z.enum(['true','false']).transform(...)`.

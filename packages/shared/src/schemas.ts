@@ -63,7 +63,12 @@ export const updateRemoteSchema = z.object({
 export const fsListQuerySchema = z.object({
   remote: remoteNameSchema,
   path: remotePathStringSchema.default(''),
-  recurse: z.coerce.boolean().default(false),
+  // `z.coerce.boolean()` reads `"false"` as a non-empty string, so it
+  // coerces to `true` — the exact opposite of what a `?recurse=false` query
+  // param means. Every Explorer listing sends `recurse=false` explicitly
+  // (the frontend's `qs()` helper doesn't omit `false`), so this silently
+  // made every listing recursive.
+  recurse: z.preprocess((value) => value === 'true' || value === true, z.boolean()).default(false),
 });
 
 export const fsMkdirSchema = remotePathSchema;
