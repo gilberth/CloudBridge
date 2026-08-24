@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, LoaderCircle, Terminal } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Cloud,
+  KeyRound,
+  LoaderCircle,
+  Settings2,
+  Terminal,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { ProviderInfo, ProviderOption } from '@cloudbridge/shared';
 import { ApiError, api } from '@/lib/api';
@@ -14,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { FieldHelp } from '@/components/ui/field-help';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -27,7 +36,10 @@ import { ProviderIcon } from '@/components/provider-icon';
 import { ProviderField } from './ProviderField';
 
 /** Options every provider gets, ordered so the important ones come first. */
-function visibleOptions(provider: ProviderInfo, values: Record<string, string>): ProviderOption[] {
+function visibleOptions(
+  provider: ProviderInfo,
+  values: Record<string, string>,
+): ProviderOption[] {
   const variant = values.provider;
   return provider.options
     .filter((option) => option.name !== 'token')
@@ -40,7 +52,11 @@ function visibleOptions(provider: ProviderInfo, values: Record<string, string>):
       }
       return option.provider.split(',').includes(variant);
     })
-    .sort((a, b) => Number(a.advanced) - Number(b.advanced) || Number(b.required) - Number(a.required));
+    .sort(
+      (a, b) =>
+        Number(a.advanced) - Number(b.advanced) ||
+        Number(b.required) - Number(a.required),
+    );
 }
 
 export function RemoteDialog({
@@ -116,11 +132,16 @@ export function RemoteDialog({
     onSuccess: (remote) => {
       void queryClient.invalidateQueries({ queryKey: ['remotes'] });
       void queryClient.invalidateQueries({ queryKey: ['remote', remote.name] });
-      toast.success(editing ? `Remoto "${remote.name}" actualizado` : `Remoto "${remote.name}" creado`, {
-        description: remote.online
-          ? 'Conexión verificada correctamente.'
-          : (remote.error ?? 'Guardado, pero la conexión de prueba falló.'),
-      });
+      toast.success(
+        editing
+          ? `Remoto "${remote.name}" actualizado`
+          : `Remoto "${remote.name}" creado`,
+        {
+          description: remote.online
+            ? 'Conexión verificada correctamente.'
+            : (remote.error ?? 'Guardado, pero la conexión de prueba falló.'),
+        },
+      );
       onOpenChange(false);
     },
     onError: (error) =>
@@ -133,134 +154,203 @@ export function RemoteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{editing ? `Editar "${editing}"` : 'Añadir remoto'}</DialogTitle>
-          <DialogDescription>
-            {editing
-              ? 'Los secretos guardados se muestran enmascarados; escribe uno nuevo solo si quieres reemplazarlo.'
-              : 'Elige el tipo de proveedor y rellena su configuración.'}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        data-remote-dialog="true"
+        className="w-[calc(100%_-_2rem)] max-w-[720px] overflow-hidden p-0"
+      >
+        <div className="flex max-h-[90vh] flex-col">
+          <DialogHeader className="mb-0 border-b border-border/70 bg-muted/20 px-5 pb-4 pt-5">
+            <DialogTitle>{editing ? `Editar "${editing}"` : 'Añadir remoto'}</DialogTitle>
+            <DialogDescription>
+              {editing
+                ? 'Los secretos guardados se muestran enmascarados; escribe uno nuevo solo si quieres reemplazarlo.'
+                : 'Elige el proveedor, identifica el remoto y completa únicamente los datos necesarios.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        {!type && (
-          <div className="rounded-md border border-border">
-            {providersQuery.isPending ? (
-              <div className="space-y-1 p-2">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <Skeleton key={index} className="h-7 w-full" />
-                ))}
-              </div>
-            ) : (
-              <Command>
-                <CommandInput placeholder="Buscar proveedor…" />
-                <CommandList className="max-h-72">
-                  <CommandEmpty>Ningún proveedor coincide.</CommandEmpty>
-                  {providersQuery.data?.map((entry) => (
-                    <CommandItem
-                      key={entry.name}
-                      value={`${entry.name} ${entry.description}`}
-                      onSelect={() => setType(entry.name)}
-                    >
-                      <ProviderIcon type={entry.name} />
-                      <span className="mono text-[12px]">{entry.name}</span>
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {entry.description}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandList>
-              </Command>
-            )}
-          </div>
-        )}
-
-        {type && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1.5">
-              <ProviderIcon type={type} />
-              <span className="mono text-[12px]">{type}</span>
-              <span className="truncate text-[11px] text-muted-foreground">
-                {provider?.description}
-              </span>
-              {!editing && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto"
-                  onClick={() => setType(null)}
-                >
-                  Cambiar
-                </Button>
-              )}
-            </div>
-
-            {!editing && (
-              <div className="space-y-1">
-                <Label htmlFor="remote-name">Nombre del remoto</Label>
-                <Input
-                  id="remote-name"
-                  value={name}
-                  autoFocus
-                  placeholder="p. ej. gdrive-personal"
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-            )}
-
-            {provider?.oauth && <OAuthHelp type={type} token={token} onTokenChange={setToken} />}
-
-            <div className="max-h-[38vh] space-y-3 overflow-y-auto pr-1">
-              {basic.map((option) => (
-                <ProviderField
-                  key={option.name}
-                  option={option}
-                  value={values[option.name] ?? ''}
-                  onChange={(value) => setValues((previous) => ({ ...previous, [option.name]: value }))}
-                />
-              ))}
-
-              {advanced.length > 0 && (
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowAdvanced((previous) => !previous)}
-                  >
-                    {showAdvanced ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                    Opciones avanzadas ({advanced.length})
-                  </button>
-                  {showAdvanced && (
-                    <div className="mt-2 space-y-3 border-l border-border pl-3">
-                      {advanced.map((option) => (
-                        <ProviderField
-                          key={option.name}
-                          option={option}
-                          value={values[option.name] ?? ''}
-                          onChange={(value) =>
-                            setValues((previous) => ({ ...previous, [option.name]: value }))
-                          }
-                        />
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            {!type && (
+              <div className="overflow-hidden rounded-lg border border-border">
+                {providersQuery.isPending ? (
+                  <div className="space-y-1 p-2">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <Skeleton key={index} className="h-9 w-full" />
+                    ))}
+                  </div>
+                ) : (
+                  <Command>
+                    <CommandInput placeholder="Buscar proveedor…" />
+                    <CommandList className="max-h-[52vh]">
+                      <CommandEmpty>Ningún proveedor coincide.</CommandEmpty>
+                      {providersQuery.data?.map((entry) => (
+                        <CommandItem
+                          key={entry.name}
+                          value={`${entry.name} ${entry.description}`}
+                          onSelect={() => setType(entry.name)}
+                          className="min-h-9"
+                        >
+                          <ProviderIcon type={entry.name} />
+                          <span className="mono text-[12px]">{entry.name}</span>
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {entry.description}
+                          </span>
+                        </CommandItem>
                       ))}
-                    </div>
+                    </CommandList>
+                  </Command>
+                )}
+              </div>
+            )}
+
+            {type && (
+              <div className="space-y-4">
+                <div className="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10">
+                    <ProviderIcon type={type} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mono truncate text-[12px] font-medium">{type}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {provider?.description}
+                    </p>
+                  </div>
+                  {!editing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto"
+                      onClick={() => setType(null)}
+                    >
+                      Cambiar
+                    </Button>
                   )}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
-            {save.isPending && <LoaderCircle className="animate-spin" />}
-            {editing ? 'Guardar cambios' : 'Crear remoto'}
-          </Button>
-        </DialogFooter>
+                {!editing && (
+                  <section className="overflow-hidden rounded-lg border border-border/80 bg-card/40">
+                    <SectionHeading
+                      icon={Cloud}
+                      title="Identidad del remoto"
+                      description="Este nombre aparecerá en el Explorer y en los jobs."
+                    />
+                    <div className="p-4">
+                      <div className="grid min-w-0 content-start gap-1.5">
+                        <div className="flex min-h-5 items-center gap-1.5">
+                          <Label htmlFor="remote-name">Nombre del remoto</Label>
+                          <FieldHelp label="Nombre del remoto">
+                            Identificador único y fácil de reconocer. Usa letras, números,
+                            guiones o guiones bajos; por ejemplo, onedrive-personal.
+                          </FieldHelp>
+                        </div>
+                        <Input
+                          id="remote-name"
+                          value={name}
+                          autoFocus
+                          placeholder="p. ej. onedrive-personal"
+                          onChange={(event) => setName(event.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {provider?.oauth && (
+                  <OAuthHelp type={type} token={token} onTokenChange={setToken} />
+                )}
+
+                <section className="overflow-hidden rounded-lg border border-border/80 bg-card/40">
+                  <SectionHeading
+                    icon={Settings2}
+                    title="Configuración del proveedor"
+                    description="Los valores vacíos conservan los ajustes predeterminados de rclone."
+                  />
+                  <div className="grid gap-4 p-4 sm:grid-cols-2">
+                    {basic.map((option) => (
+                      <ProviderField
+                        key={option.name}
+                        option={option}
+                        provider={type}
+                        value={values[option.name] ?? ''}
+                        onChange={(value) =>
+                          setValues((previous) => ({ ...previous, [option.name]: value }))
+                        }
+                      />
+                    ))}
+
+                    {advanced.length > 0 && (
+                      <div className="border-t border-border/70 pt-3 sm:col-span-2">
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => setShowAdvanced((previous) => !previous)}
+                        >
+                          {showAdvanced ? (
+                            <ChevronDown className="size-3" />
+                          ) : (
+                            <ChevronRight className="size-3" />
+                          )}
+                          Opciones avanzadas ({advanced.length})
+                        </button>
+                        {showAdvanced && (
+                          <div className="mt-3 grid gap-4 border-l border-border pl-3 sm:grid-cols-2">
+                            {advanced.map((option) => (
+                              <ProviderField
+                                key={option.name}
+                                option={option}
+                                provider={type}
+                                value={values[option.name] ?? ''}
+                                onChange={(value) =>
+                                  setValues((previous) => ({
+                                    ...previous,
+                                    [option.name]: value,
+                                  }))
+                                }
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-0 border-t border-border/70 bg-muted/10 px-5 py-4">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
+              {save.isPending && <LoaderCircle className="animate-spin" />}
+              {editing ? 'Guardar cambios' : 'Crear remoto'}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SectionHeading({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof Cloud;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 border-b border-border/70 bg-muted/20 px-4 py-3">
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0">
+        <h3 className="text-[12px] font-semibold leading-5">{title}</h3>
+        <p className="text-[11px] leading-4 text-muted-foreground">{description}</p>
+      </div>
+    </div>
   );
 }
 
@@ -279,41 +369,57 @@ function OAuthHelp({
 }) {
   const command = `rclone authorize "${type}"`;
   return (
-    <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
-      <p className="flex items-center gap-1.5 text-[12px] font-medium">
-        <Terminal className="size-3.5 text-primary" />
-        Este proveedor necesita autorización OAuth
-      </p>
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        Ejecuta este comando en un equipo con navegador y pega aquí el JSON que devuelve. Si usas tu
-        propio client_id/client_secret, rellénalos abajo primero y añádelos también al comando.
-      </p>
-      <div className="flex items-center gap-2">
-        <code className="mono flex-1 truncate rounded bg-background px-2 py-1 text-[12px]">
-          {command}
-        </code>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            void navigator.clipboard.writeText(command);
-            toast.success('Comando copiado');
-          }}
-        >
-          Copiar
-        </Button>
+    <section className="overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
+      <div className="flex items-start gap-3 border-b border-primary/20 px-4 py-3">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
+          <KeyRound className="size-4" />
+        </div>
+        <div>
+          <h3 className="text-[12px] font-semibold leading-5">Autorización OAuth</h3>
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            Autoriza el acceso desde un equipo que tenga navegador.
+          </p>
+        </div>
       </div>
-      <div className="space-y-1">
-        <Label htmlFor="oauth-token">Token</Label>
-        <textarea
-          id="oauth-token"
-          rows={3}
-          value={token}
-          onChange={(event) => onTokenChange(event.target.value)}
-          placeholder='{"access_token":"…","refresh_token":"…","expiry":"…"}'
-          className="mono w-full rounded-md border border-input bg-background px-2.5 py-2 text-[12px] placeholder:text-muted-foreground"
-        />
+      <div className="space-y-4 p-4">
+        <div className="space-y-2">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Ejecuta el comando, completa el acceso y pega el JSON resultante. Si utilizas
+            tus propios client_id y client_secret, añádelos también al comando.
+          </p>
+          <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-background/80 p-1.5">
+            <Terminal className="ml-1 size-3.5 shrink-0 text-primary" />
+            <code className="mono min-w-0 flex-1 truncate text-[11px]">{command}</code>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(command);
+                toast.success('Comando copiado');
+              }}
+            >
+              Copiar
+            </Button>
+          </div>
+        </div>
+        <div className="grid min-w-0 content-start gap-1.5">
+          <div className="flex min-h-5 items-center gap-1.5">
+            <Label htmlFor="oauth-token">Token OAuth</Label>
+            <FieldHelp label="Token OAuth">
+              Pega el JSON completo que devuelve rclone authorize. Incluye los tokens de
+              acceso y renovación necesarios para conectar el remoto.
+            </FieldHelp>
+          </div>
+          <textarea
+            id="oauth-token"
+            rows={3}
+            value={token}
+            onChange={(event) => onTokenChange(event.target.value)}
+            placeholder='{"access_token":"…","refresh_token":"…","expiry":"…"}'
+            className="mono w-full rounded-md border border-input bg-background px-2.5 py-2 text-[12px] placeholder:text-muted-foreground focus-visible:border-ring"
+          />
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   DndContext,
   DragOverlay,
@@ -11,7 +11,16 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { Files, GitCompare, LoaderCircle } from 'lucide-react';
+import {
+  Copy,
+  Files,
+  GitCompare,
+  LoaderCircle,
+  MoveLeft,
+  MoveRight,
+  RefreshCw,
+  type LucideIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { CompareCategory, CompareResult, FsEntry } from '@cloudbridge/shared';
 import { ApiError, api } from '@/lib/api';
@@ -33,14 +42,22 @@ import { cn } from '@/lib/utils';
 type Side = 'left' | 'right';
 
 export default function ExplorerPage() {
-  const left = usePanelState('left');
-  const right = usePanelState('right');
+  const remotes = useQuery({ queryKey: ['remotes'], queryFn: api.remotes.list });
+  const availableRemotes = useMemo(
+    () => remotes.data?.map((remote) => remote.name),
+    [remotes.data],
+  );
+  const left = usePanelState('left', availableRemotes);
+  const right = usePanelState('right', availableRemotes);
   const wide = useMediaQuery('(min-width: 1024px)');
   const [activePanel, setActivePanel] = useState<Side>('left');
   const { data: health } = useHealth();
   const offline = health ? !health.rclone.online : false;
 
-  const controllers = useRef<Record<Side, PanelController | null>>({ left: null, right: null });
+  const controllers = useRef<Record<Side, PanelController | null>>({
+    left: null,
+    right: null,
+  });
   const [, forceRender] = useState(0);
   const setController = useCallback((side: Side, controller: PanelController) => {
     controllers.current[side] = controller;
@@ -118,9 +135,12 @@ export default function ExplorerPage() {
     onSuccess: (result) => {
       setCompare(result);
       setCompareFilter(null);
-      const changes = result.counts.onlySrc + result.counts.onlyDst + result.counts.differ;
+      const changes =
+        result.counts.onlySrc + result.counts.onlyDst + result.counts.differ;
       toast.success(
-        changes === 0 ? 'Las dos carpetas coinciden' : `${changes} diferencias encontradas`,
+        changes === 0
+          ? 'Las dos carpetas coinciden'
+          : `${changes} diferencias encontradas`,
       );
     },
     onError: (error) =>
@@ -191,7 +211,10 @@ export default function ExplorerPage() {
           actions={
             <>
               {!wide && (
-                <Tabs value={activePanel} onValueChange={(value) => setActivePanel(value as Side)}>
+                <Tabs
+                  value={activePanel}
+                  onValueChange={(value) => setActivePanel(value as Side)}
+                >
                   <TabsList>
                     <TabsTrigger value="left">Panel A</TabsTrigger>
                     <TabsTrigger value="right">Panel B</TabsTrigger>
@@ -204,7 +227,11 @@ export default function ExplorerPage() {
                 disabled={!bothReady || runCompare.isPending}
                 onClick={() => runCompare.mutate(false)}
               >
-                {runCompare.isPending ? <LoaderCircle className="animate-spin" /> : <GitCompare />}
+                {runCompare.isPending ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <GitCompare />
+                )}
                 Comparar
               </Button>
               <Button
@@ -235,7 +262,11 @@ export default function ExplorerPage() {
         )}
 
         {wide ? (
-          <PanelGroup direction="horizontal" autoSaveId="cloudbridge.explorer" className="min-h-0 flex-1">
+          <PanelGroup
+            direction="horizontal"
+            autoSaveId="cloudbridge.explorer"
+            className="min-h-0 flex-1"
+          >
             <Panel defaultSize={50} minSize={20}>
               <DropZone side="left" activeFrom={dragging?.side ?? null}>
                 {panel('left')}
@@ -246,9 +277,11 @@ export default function ExplorerPage() {
               <div className="absolute inset-y-0 -left-1 -right-1 cursor-col-resize" />
             </PanelResizeHandle>
 
-            <div className="flex w-20 shrink-0 flex-col items-center justify-center gap-1 border-x border-border bg-background px-1.5">
+            <div className="flex w-[96px] shrink-0 flex-col items-center justify-center gap-1 border-x border-border bg-background px-2">
               <CentreAction
                 label="Copiar hacia la derecha"
+                icon={Copy}
+                iconClassName="text-sky-400"
                 disabled={!bothReady}
                 onClick={() => propose('left', 'copy')}
               >
@@ -256,6 +289,8 @@ export default function ExplorerPage() {
               </CentreAction>
               <CentreAction
                 label="Copiar hacia la izquierda"
+                icon={Copy}
+                iconClassName="text-sky-400"
                 disabled={!bothReady}
                 onClick={() => propose('right', 'copy')}
               >
@@ -264,6 +299,8 @@ export default function ExplorerPage() {
               <div className="my-1 h-px w-5 bg-border" />
               <CentreAction
                 label="Mover hacia la derecha"
+                icon={MoveRight}
+                iconClassName="text-amber-400"
                 disabled={!bothReady}
                 onClick={() => propose('left', 'move')}
               >
@@ -271,6 +308,8 @@ export default function ExplorerPage() {
               </CentreAction>
               <CentreAction
                 label="Mover hacia la izquierda"
+                icon={MoveLeft}
+                iconClassName="text-amber-400"
                 disabled={!bothReady}
                 onClick={() => propose('right', 'move')}
               >
@@ -279,6 +318,8 @@ export default function ExplorerPage() {
               <div className="my-1 h-px w-5 bg-border" />
               <CentreAction
                 label="Sincronizar hacia la derecha"
+                icon={RefreshCw}
+                iconClassName="text-emerald-400"
                 disabled={!bothReady}
                 onClick={() => propose('left', 'sync')}
               >
@@ -301,7 +342,12 @@ export default function ExplorerPage() {
           pending={transfer.isPending}
           onClose={() => setRequest(null)}
           onConfirm={(mode, dryRun, ignoreErrors, confirm) =>
-            transfer.mutate({ mode, dryRun, ignoreErrors, ...(confirm ? { confirm } : {}) })
+            transfer.mutate({
+              mode,
+              dryRun,
+              ignoreErrors,
+              ...(confirm ? { confirm } : {}),
+            })
           }
         />
       </div>
@@ -347,11 +393,15 @@ function DropZone({
 
 function CentreAction({
   label,
+  icon: Icon,
+  iconClassName,
   disabled,
   onClick,
   children,
 }: {
   label: string;
+  icon: LucideIcon;
+  iconClassName: string;
   disabled: boolean;
   onClick: () => void;
   children: React.ReactNode;
@@ -360,12 +410,13 @@ function CentreAction({
     <Button
       variant="ghost"
       size="sm"
-      className="h-7 w-full px-1 text-[10px] leading-none"
+      className="h-8 w-full justify-start rounded-md border border-transparent bg-accent/25 px-2 text-[10px] leading-none hover:border-border hover:bg-accent"
       aria-label={label}
       title={label}
       disabled={disabled}
       onClick={onClick}
     >
+      <Icon className={cn('size-4', iconClassName)} aria-hidden="true" />
       {children}
     </Button>
   );

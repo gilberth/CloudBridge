@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 export type PanelSide = 'left' | 'right';
@@ -11,20 +11,50 @@ export interface PanelState {
   navigate: (remote: string | null, path: string) => void;
 }
 
+const remoteStorageKey = (side: PanelSide) => `cloudbridge.explorer.${side}Remote`;
+
+function readStoredRemote(side: PanelSide): string | null {
+  try {
+    return window.localStorage.getItem(remoteStorageKey(side));
+  } catch {
+    return null;
+  }
+}
+
+function storeRemote(side: PanelSide, remote: string | null) {
+  try {
+    if (remote) window.localStorage.setItem(remoteStorageKey(side), remote);
+    else window.localStorage.removeItem(remoteStorageKey(side));
+  } catch {
+    // The URL remains the source of truth when storage is unavailable.
+  }
+}
+
 /**
  * Panel location lives in the URL, so a two-pane view can be bookmarked and the
  * sidebar can deep-link into a remote.
  */
-export function usePanelState(side: PanelSide): PanelState {
+export function usePanelState(
+  side: PanelSide,
+  availableRemotes?: readonly string[],
+): PanelState {
   const [searchParams, setSearchParams] = useSearchParams();
   const remoteKey = side;
   const pathKey = `${side}Path`;
 
-  const remote = searchParams.get(remoteKey);
+  const urlRemote = searchParams.get(remoteKey);
+  const storedRemote = readStoredRemote(side);
+  const candidateRemote = urlRemote ?? storedRemote;
+  const remote =
+    candidateRemote &&
+    (availableRemotes === undefined || availableRemotes.includes(candidateRemote))
+      ? candidateRemote
+      : null;
   const path = searchParams.get(pathKey) ?? '';
 
   const navigate = useCallback(
     (nextRemote: string | null, nextPath: string) => {
+      storeRemote(side, nextRemote);
       setSearchParams(
         (previous) => {
           const next = new URLSearchParams(previous);
@@ -37,14 +67,29 @@ export function usePanelState(side: PanelSide): PanelState {
         { replace: true },
       );
     },
-    [setSearchParams, remoteKey, pathKey],
+    [setSearchParams, side, remoteKey, pathKey],
   );
+
+  useEffect(() => {
+    if (availableRemotes === undefined || !candidateRemote) return;
+
+    if (!availableRemotes.includes(candidateRemote)) {
+      navigate(null, '');
+      return;
+    }
+
+    storeRemote(side, candidateRemote);
+    if (!urlRemote) navigate(candidateRemote, '');
+  }, [availableRemotes, candidateRemote, navigate, side, urlRemote]);
 
   const setRemote = useCallback(
     (nextRemote: string | null) => navigate(nextRemote, ''),
     [navigate],
   );
-  const setPath = useCallback((nextPath: string) => navigate(remote, nextPath), [navigate, remote]);
+  const setPath = useCallback(
+    (nextPath: string) => navigate(remote, nextPath),
+    [navigate, remote],
+  );
 
   return useMemo(
     () => ({ remote, path, setRemote, setPath, navigate }),

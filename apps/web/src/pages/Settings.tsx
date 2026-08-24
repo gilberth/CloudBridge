@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, LoaderCircle, Plug, Plus, Trash2, Upload } from 'lucide-react';
+import {
+  Clock3,
+  Download,
+  FileCog,
+  LoaderCircle,
+  Plug,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+  Upload,
+  Users,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { SessionUser } from '@cloudbridge/shared';
 import { ApiError, api } from '@/lib/api';
@@ -8,6 +21,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea } from '@/components/ui/input';
+import { FieldHelp } from '@/components/ui/field-help';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -16,31 +30,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { useAuth } from '@/hooks/useAuth';
+import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings.get });
 
-  const [form, setForm] = useState<ReturnType<typeof api.settings.get> extends Promise<infer T> ? T | null : never>(
-    null,
-  );
+  const [form, setForm] =
+    useState<
+      ReturnType<typeof api.settings.get> extends Promise<infer T> ? T | null : never
+    >(null);
   useEffect(() => {
     if (settings.data) setForm(settings.data);
   }, [settings.data]);
 
   const [rclonePassword, setRclonePassword] = useState('');
-  const [testResult, setTestResult] = useState<{ online: boolean; error: string | null } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    online: boolean;
+    error: string | null;
+  } | null>(null);
 
   const testConnection = useMutation({
     mutationFn: () =>
       api.settings.testRclone(
         form
-          ? { url: form.rclone.url, user: form.rclone.user, ...(rclonePassword ? { password: rclonePassword } : {}) }
+          ? {
+              url: form.rclone.url,
+              user: form.rclone.user,
+              ...(rclonePassword ? { password: rclonePassword } : {}),
+            }
           : undefined,
       ),
     onSuccess: (result) => setTestResult({ online: result.online, error: result.error }),
@@ -76,7 +98,11 @@ export default function SettingsPage() {
       }),
   });
 
-  const timezones = useQuery({ queryKey: ['timezones'], queryFn: api.settings.timezones, staleTime: Infinity });
+  const timezones = useQuery({
+    queryKey: ['timezones'],
+    queryFn: api.settings.timezones,
+    staleTime: Infinity,
+  });
 
   if (settings.isPending || !form) {
     return (
@@ -100,37 +126,66 @@ export default function SettingsPage() {
         }
       />
 
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
-        <Section title="Conexión con rclone">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="URL de la RC API">
-              <Input
-                value={form.rclone.url}
-                onChange={(event) => setForm({ ...form, rclone: { ...form.rclone, url: event.target.value } })}
-              />
-            </Field>
-            <Field label="Usuario">
-              <Input
-                value={form.rclone.user}
-                onChange={(event) => setForm({ ...form, rclone: { ...form.rclone, user: event.target.value } })}
-              />
-            </Field>
-            <Field label={`Contraseña ${form.rclone.passwordSet ? '(configurada)' : ''}`}>
-              <Input
-                type="password"
-                placeholder={form.rclone.passwordSet ? '••••••••' : ''}
-                value={rclonePassword}
-                onChange={(event) => setRclonePassword(event.target.value)}
-              />
-            </Field>
-            <div className="flex items-end gap-2">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[1440px] space-y-4 p-4">
+          <Section
+            title="Conexión con rclone"
+            description="Acceso a la API remota que CloudBridge utiliza para ejecutar operaciones."
+            icon={Plug}
+          >
+            <div className="grid gap-4 lg:grid-cols-3">
+              <Field
+                label="URL de la RC API"
+                help="Dirección HTTP del servicio rclone RC. Ejemplo: http://127.0.0.1:5572."
+              >
+                <Input
+                  value={form.rclone.url}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      rclone: { ...form.rclone, url: event.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="Usuario"
+                help="Usuario configurado al iniciar el servicio rclone RC."
+              >
+                <Input
+                  value={form.rclone.user}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      rclone: { ...form.rclone, user: event.target.value },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label={`Contraseña ${form.rclone.passwordSet ? '(configurada)' : ''}`}
+                help="Credencial de la RC API. Déjala vacía para conservar la contraseña configurada."
+              >
+                <Input
+                  type="password"
+                  placeholder={form.rclone.passwordSet ? '••••••••' : ''}
+                  value={rclonePassword}
+                  onChange={(event) => setRclonePassword(event.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="flex min-h-10 flex-wrap items-center gap-2 border-t border-border/70 pt-4">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => testConnection.mutate()}
                 disabled={testConnection.isPending}
               >
-                {testConnection.isPending ? <LoaderCircle className="animate-spin" /> : <Plug />}
+                {testConnection.isPending ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Plug />
+                )}
                 Probar conexión
               </Button>
               {testResult && (
@@ -139,167 +194,280 @@ export default function SettingsPage() {
                 </Badge>
               )}
             </div>
-          </div>
-        </Section>
-
-        <Section title="Valores por defecto">
-          <div className="grid grid-cols-4 gap-3">
-            <Field label="--transfers">
-              <Input
-                type="number"
-                min={1}
-                value={form.defaults.transfers}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    defaults: { ...form.defaults, transfers: Number(event.target.value) || 1 },
-                  })
-                }
-              />
-            </Field>
-            <Field label="--checkers">
-              <Input
-                type="number"
-                min={1}
-                value={form.defaults.checkers}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    defaults: { ...form.defaults, checkers: Number(event.target.value) || 1 },
-                  })
-                }
-              />
-            </Field>
-            <Field label="--bwlimit global">
-              <Input
-                placeholder="p. ej. 10M"
-                value={form.defaults.bwlimit ?? ''}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    defaults: { ...form.defaults, bwlimit: event.target.value || null },
-                  })
-                }
-              />
-            </Field>
-            <Field label="Nivel de log">
-              <Select
-                value={form.defaults.logLevel}
-                onValueChange={(logLevel) =>
-                  setForm({ ...form, defaults: { ...form.defaults, logLevel: logLevel as typeof form.defaults.logLevel } })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(['debug', 'info', 'warn', 'error'] as const).map((level) => (
-                    <SelectItem key={level} value={level}>
-                      {level}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="Historial y zona horaria">
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Retención del historial (días)">
-              <Input
-                type="number"
-                min={1}
-                value={form.historyRetentionDays}
-                onChange={(event) =>
-                  setForm({ ...form, historyRetentionDays: Number(event.target.value) || 1 })
-                }
-              />
-            </Field>
-            <Field label="Zona horaria del scheduler">
-              <Select value={form.timezone} onValueChange={(timezone) => setForm({ ...form, timezone })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(timezones.data ?? [form.timezone]).map((zone) => (
-                    <SelectItem key={zone} value={zone}>
-                      {zone}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Color de acento">
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={form.accentColor}
-                  onChange={(event) => setForm({ ...form, accentColor: event.target.value })}
-                  className="h-8 w-10 rounded border border-input bg-transparent"
-                />
-                <Input
-                  className="mono"
-                  value={form.accentColor}
-                  onChange={(event) => setForm({ ...form, accentColor: event.target.value })}
-                />
-              </div>
-            </Field>
-          </div>
-        </Section>
-
-        <Section title="Webhook global">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="URL">
-              <Input
-                placeholder="https://…"
-                value={form.webhookUrl ?? ''}
-                onChange={(event) => setForm({ ...form, webhookUrl: event.target.value || null })}
-              />
-            </Field>
-            <Field label="Plantilla del payload JSON (opcional)">
-              <Textarea
-                className="mono"
-                rows={2}
-                placeholder='{"text":"{{job}} terminó: {{status}}"}'
-                value={form.webhookTemplate ?? ''}
-                onChange={(event) => setForm({ ...form, webhookTemplate: event.target.value || null })}
-              />
-            </Field>
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            Placeholders: <code className="mono">{'{{job}} {{status}} {{mode}} {{files}} {{bytesHuman}} {{duration}} {{error}}'}</code>
-          </p>
-        </Section>
-
-        <Section title="Importar / exportar rclone.conf">
-          <ConfigTransfer />
-        </Section>
-
-        {user?.role === 'admin' && (
-          <Section title="Usuarios">
-            <UsersManager />
           </Section>
-        )}
+
+          <Section
+            title="Valores por defecto"
+            description="Parámetros base aplicados a las nuevas transferencias."
+            icon={SlidersHorizontal}
+          >
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <Field
+                label="--transfers"
+                help="Cantidad máxima de archivos transferidos en paralelo. Un valor mayor consume más red y CPU."
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.defaults.transfers}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      defaults: {
+                        ...form.defaults,
+                        transfers: Number(event.target.value) || 1,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="--checkers"
+                help="Cantidad de comprobaciones paralelas que rclone usa al comparar origen y destino."
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.defaults.checkers}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      defaults: {
+                        ...form.defaults,
+                        checkers: Number(event.target.value) || 1,
+                      },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="--bwlimit global"
+                help="Límite global de ancho de banda. Ejemplos: 10M o 500K; vacío significa sin límite."
+              >
+                <Input
+                  placeholder="p. ej. 10M"
+                  value={form.defaults.bwlimit ?? ''}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      defaults: { ...form.defaults, bwlimit: event.target.value || null },
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="Nivel de log"
+                help="Define cuánto detalle se guarda en los logs. info es adecuado para el uso normal."
+              >
+                <Select
+                  value={form.defaults.logLevel}
+                  onValueChange={(logLevel) =>
+                    setForm({
+                      ...form,
+                      defaults: {
+                        ...form.defaults,
+                        logLevel: logLevel as typeof form.defaults.logLevel,
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(['debug', 'info', 'warn', 'error'] as const).map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+          </Section>
+
+          <Section
+            title="Historial y zona horaria"
+            description="Controla la conservación de actividad y la referencia horaria de los jobs."
+            icon={Clock3}
+          >
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field
+                label="Retención del historial (días)"
+                help="Días que se conservan ejecuciones y eventos antes de limpiar el historial."
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.historyRetentionDays}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      historyRetentionDays: Number(event.target.value) || 1,
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label="Zona horaria del scheduler"
+                help="Zona usada para interpretar y ejecutar los horarios programados de los jobs."
+              >
+                <Select
+                  value={form.timezone}
+                  onValueChange={(timezone) => setForm({ ...form, timezone })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(timezones.data ?? [form.timezone]).map((zone) => (
+                      <SelectItem key={zone} value={zone}>
+                        {zone}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field
+                label="Color de acento"
+                help="Color principal de botones y estados activos, expresado en formato hexadecimal."
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={form.accentColor}
+                    onChange={(event) =>
+                      setForm({ ...form, accentColor: event.target.value })
+                    }
+                    className="h-8 w-10 rounded border border-input bg-transparent"
+                  />
+                  <Input
+                    className="mono"
+                    value={form.accentColor}
+                    onChange={(event) =>
+                      setForm({ ...form, accentColor: event.target.value })
+                    }
+                  />
+                </div>
+              </Field>
+            </div>
+          </Section>
+
+          <Section
+            title="Webhook global"
+            description="Envía una notificación HTTP cuando finaliza una tarea."
+            icon={Webhook}
+          >
+            <div className="grid gap-4 lg:grid-cols-12">
+              <Field
+                className="lg:col-span-5"
+                label="URL"
+                help="Endpoint HTTP que recibe una notificación al finalizar una tarea."
+              >
+                <Input
+                  placeholder="https://…"
+                  value={form.webhookUrl ?? ''}
+                  onChange={(event) =>
+                    setForm({ ...form, webhookUrl: event.target.value || null })
+                  }
+                />
+              </Field>
+              <Field
+                className="lg:col-span-7"
+                label="Plantilla del payload JSON (opcional)"
+                help="JSON enviado al webhook. Puedes insertar los placeholders mostrados debajo."
+              >
+                <Textarea
+                  className="mono"
+                  rows={2}
+                  placeholder='{"text":"{{job}} terminó: {{status}}"}'
+                  value={form.webhookTemplate ?? ''}
+                  onChange={(event) =>
+                    setForm({ ...form, webhookTemplate: event.target.value || null })
+                  }
+                />
+              </Field>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Placeholders:{' '}
+              <code className="mono">
+                {
+                  '{{job}} {{status}} {{mode}} {{files}} {{bytesHuman}} {{duration}} {{error}}'
+                }
+              </code>
+            </p>
+          </Section>
+
+          <Section
+            title="Importar / exportar rclone.conf"
+            description="Descarga la configuración actual o incorpora remotos desde otro archivo."
+            icon={FileCog}
+          >
+            <ConfigTransfer />
+          </Section>
+
+          {user?.role === 'admin' && (
+            <Section
+              title="Usuarios"
+              description="Administra las cuentas que pueden acceder a CloudBridge."
+              icon={Users}
+            >
+              <UsersManager />
+            </Section>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="space-y-3">
-      <h2 className="text-[12px] font-semibold">{title}</h2>
-      {children}
-      <Separator />
+    <section
+      data-settings-card="true"
+      className="overflow-hidden rounded-lg border border-border/80 bg-card/40 shadow-sm"
+    >
+      <div className="flex items-start gap-3 border-b border-border/70 bg-muted/20 px-4 py-3">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-primary">
+          <Icon className="size-4" />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-[13px] font-semibold leading-5">{title}</h2>
+          <p className="text-[11px] leading-4 text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="space-y-4 p-4">{children}</div>
     </section>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  help,
+  className,
+  children,
+}: {
+  label: string;
+  help: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-1">
-      <Label>{label}</Label>
+    <div className={cn('grid min-w-0 content-start gap-1.5', className)}>
+      <div className="flex min-h-5 items-center gap-1.5">
+        <Label className="leading-4">{label}</Label>
+        <FieldHelp label={label}>{help}</FieldHelp>
+      </div>
       {children}
     </div>
   );
@@ -413,11 +581,17 @@ function UsersManager() {
         ))}
       </div>
 
-      <div className="flex items-end gap-2">
-        <Field label="Nuevo usuario">
+      <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <Field
+          label="Nuevo usuario"
+          help="Nombre con el que la persona iniciará sesión en CloudBridge."
+        >
           <Input value={username} onChange={(event) => setUsername(event.target.value)} />
         </Field>
-        <Field label="Contraseña">
+        <Field
+          label="Contraseña"
+          help="Contraseña inicial del usuario; debe contener al menos 8 caracteres."
+        >
           <Input
             type="password"
             value={password}

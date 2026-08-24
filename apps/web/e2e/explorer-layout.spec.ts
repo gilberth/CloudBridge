@@ -58,6 +58,38 @@ test('mantiene centradas y contenidas las acciones entre paneles', async ({ page
     ),
   );
   expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(1);
+
+  const railWidth = await page
+    .getByRole('button', { name: 'Copiar hacia la derecha' })
+    .evaluate((element) => element.parentElement?.getBoundingClientRect().width ?? 0);
+  expect(railWidth).toBeGreaterThanOrEqual(96);
+});
+
+test('distingue las operaciones con iconos visibles y colores semánticos', async ({ page }) => {
+  await page.goto('/explorer');
+
+  const names = [
+    'Copiar hacia la derecha',
+    'Copiar hacia la izquierda',
+    'Mover hacia la derecha',
+    'Mover hacia la izquierda',
+    'Sincronizar hacia la derecha',
+  ];
+
+  for (const name of names) {
+    await expect(page.getByRole('button', { name }).locator('svg')).toBeVisible();
+  }
+
+  const operationColors = await Promise.all(
+    ['Copiar hacia la derecha', 'Mover hacia la derecha', 'Sincronizar hacia la derecha'].map(
+      (name) =>
+        page
+          .getByRole('button', { name })
+          .locator('svg')
+          .evaluate((element) => getComputedStyle(element).color),
+    ),
+  );
+  expect(new Set(operationColors).size).toBe(3);
 });
 
 test('alinea el encabezado de Explorer con el panel izquierdo', async ({ page }) => {

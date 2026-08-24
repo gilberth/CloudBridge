@@ -1,7 +1,9 @@
 import type { ProviderOption } from '@cloudbridge/shared';
 import { Input, Textarea } from '@/components/ui/input';
+import { FieldHelp } from '@/components/ui/field-help';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { localizeProviderOption } from '@/i18n/provider-options';
 import {
   Select,
   SelectContent,
@@ -13,33 +15,32 @@ import {
 /** Render one rclone config option according to the type reported by config/providers. */
 export function ProviderField({
   option,
+  provider,
   value,
   onChange,
 }: {
   option: ProviderOption;
+  provider: string;
   value: string;
   onChange: (value: string) => void;
 }) {
   const id = `opt-${option.name}`;
+  const translation = localizeProviderOption(provider, option);
   const label = (
-    <Label htmlFor={id} className="flex items-baseline gap-1.5">
-      <span className="mono text-[12px] text-foreground">{option.name}</span>
-      {option.required && <span className="text-destructive">*</span>}
-      {option.advanced && <span className="text-[10px] uppercase">avanzada</span>}
-    </Label>
+    <div className="flex min-h-5 items-center gap-1.5">
+      <Label htmlFor={id} className="flex items-baseline gap-1.5">
+        <span className="mono text-[12px] text-foreground">{option.name}</span>
+        {option.required && <span className="text-destructive">*</span>}
+        {option.advanced && <span className="text-[10px] uppercase">avanzada</span>}
+      </Label>
+      <FieldHelp label={option.name}>{translation.help}</FieldHelp>
+    </div>
   );
-
-  const help = option.help ? (
-    <p className="text-[11px] leading-snug text-muted-foreground">{option.help.split('\n')[0]}</p>
-  ) : null;
 
   if (option.type === 'bool') {
     return (
       <div className="flex items-start justify-between gap-3 py-1">
-        <div className="space-y-0.5">
-          {label}
-          {help}
-        </div>
+        <div className="space-y-0.5">{label}</div>
         <Switch
           id={id}
           checked={value === 'true'}
@@ -61,16 +62,15 @@ export function ProviderField({
             {option.examples.map((example) => (
               <SelectItem key={example.value} value={example.value || '""'}>
                 <span className="mono">{example.value || '(vacío)'}</span>
-                {example.help && (
+                {translation.exampleHelp(example.value) && (
                   <span className="ml-2 text-[11px] text-muted-foreground">
-                    {example.help.split('\n')[0]}
+                    {translation.exampleHelp(example.value)}
                   </span>
                 )}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {help}
       </div>
     );
   }
@@ -91,16 +91,19 @@ export function ProviderField({
       ) : (
         <Input
           id={id}
-          type={option.isPassword ? 'password' : option.type === 'int' ? 'number' : 'text'}
+          type={
+            option.isPassword ? 'password' : option.type === 'int' ? 'number' : 'text'
+          }
           className="mono text-[12px]"
           placeholder={
-            option.default !== undefined && option.default !== '' ? String(option.default) : undefined
+            option.default !== undefined && option.default !== ''
+              ? String(option.default)
+              : undefined
           }
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
-      {help}
     </div>
   );
 }
