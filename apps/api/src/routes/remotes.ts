@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { createRemoteSchema, updateRemoteSchema } from '@cloudbridge/shared';
+import {
+  cancelRemoteSetupSchema,
+  continueRemoteSetupSchema,
+  createRemoteSchema,
+  updateRemoteSchema,
+} from '@cloudbridge/shared';
 import { badRequest } from '../lib/errors.js';
 
 export async function remoteRoutes(app: FastifyInstance): Promise<void> {
@@ -30,17 +35,78 @@ export async function remoteRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/remotes', async (request, reply) => {
     const input = createRemoteSchema.parse(request.body);
-    const remote = await app.remotes.create(input.name, input.type, input.parameters, input.token);
-    app.logs.write('info', 'remotes', `Remoto "${remote.name}" (${remote.type}) creado`);
-    return reply.status(201).send(remote);
+    const result = await app.remotes.create(
+      input.name,
+      input.type,
+      input.parameters,
+      input.token,
+      request.sessionUser!.id,
+    );
+    app.logs.write(
+      'info',
+      'remotes',
+      result.status === 'complete'
+        ? `Remoto "${result.remote.name}" (${result.remote.type}) creado`
+        : `Configuración del remoto "${result.remoteName}" iniciada`,
+    );
+    return reply.status(201).send(result);
   });
 
   app.put<{ Params: { name: string } }>('/api/remotes/:name', async (request) => {
     const input = updateRemoteSchema.parse(request.body);
-    const remote = await app.remotes.update(request.params.name, input.parameters, input.token);
-    app.logs.write('info', 'remotes', `Remoto "${remote.name}" actualizado`);
-    return remote;
+    const result = await app.remotes.update(
+      request.params.name,
+      input.parameters,
+      input.token,
+      request.sessionUser!.id,
+    );
+    app.logs.write(
+      'info',
+      'remotes',
+      result.status === 'complete'
+        ? `Remoto "${result.remote.name}" actualizado`
+        : `Configuración del remoto "${result.remoteName}" reanudada`,
+    );
+    return result;
   });
+
+  app.post<{ Params: { name: string } }>(
+    '/api/remotes/:name/config/continue',
+    async (request) => {
+      const input = continueRemoteSetupSchema.parse(request.body);
+      const result = await app.remotes.continueSetup(
+        request.params.name,
+        input.setupId,
+        request.sessionUser!.id,
+        input.state,
+        input.answer,
+      );
+      if (result.status === 'complete') {
+        app.logs.write('info', 'remotes', `Remoto "${result.remote.name}" configurado`);
+      }
+      return result;
+    },
+  );
+
+  app.post<{ Params: { name: string } }>(
+    '/api/remotes/:name/config/cancel',
+    async (request) => {
+      const input = cancelRemoteSetupSchema.parse(request.body);
+      const removed = await app.remotes.cancelSetup(
+        request.params.name,
+        input.setupId,
+        request.sessionUser!.id,
+      );
+      if (removed) {
+        app.logs.write(
+          'info',
+          'remotes',
+          `Configuración incompleta del remoto "${request.params.name}" eliminada`,
+        );
+      }
+      return { removed };
+    },
+  );
 
   app.delete<{ Params: { name: string } }>('/api/remotes/:name', async (request, reply) => {
     await app.remotes.remove(request.params.name);

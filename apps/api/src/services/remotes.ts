@@ -1,10 +1,12 @@
 import type {
   ProviderInfo,
+  RemoteSetupResult,
   RemoteAbout,
   RemoteDetail,
   RemoteSummary,
 } from '@cloudbridge/shared';
 import { OAUTH_PROVIDERS } from '@cloudbridge/shared';
+import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { maskSecret } from '../lib/crypto.js';
@@ -12,8 +14,16 @@ import { sanitizeRemoteName } from '../lib/path.js';
 import { fsRoot } from '../rclone/fsstring.js';
 import { RcloneError, RcloneUnavailableError } from '../rclone/client.js';
 import { env } from '../config/env.js';
+import type { RcConfigResult } from '../rclone/types.js';
 
 const OAUTH_SET = new Set<string>(OAUTH_PROVIDERS);
+const SETUP_SESSION_TTL_MS = 30 * 60_000;
+const ONEDRIVE_OAUTH_HOSTS: Record<string, string> = {
+  global: 'https://login.microsoftonline.com',
+  us: 'https://login.microsoftonline.us',
+  de: 'https://login.microsoftonline.de',
+  cn: 'https://login.chinacloudapi.cn',
+};
 
 /** Config keys that must never be echoed back to the browser in clear text. */
 const SECRET_KEYS = /pass|secret|token|key$|_key|credentials|sa_file|auth/i;
@@ -31,6 +41,18 @@ interface CachedProbe {
  */
 export class RemotesService {
   private readonly probes = new Map<string, CachedProbe>();
+  private readonly setupSessions = new Map<
+    string,
+    {
+      remote: string;
+      type: string;
+      operation: 'create' | 'update';
+      owner: string;
+      parameters: Record<string, string>;
+      created: boolean;
+      expiresAt: number;
+    }
+  >();
   private providersCache: { at: number; value: ProviderInfo[] } | null = null;
 
   constructor(private readonly app: FastifyInstance) {}
@@ -38,6 +60,97 @@ export class RemotesService {
   private get rclone() {
     // Read through the app so a Settings change swaps the client transparently.
     return this.app.rclone;
+  }
+
+  private setupQuestion(
+    remoteName: string,
+    setupId: string,
+    result: RcConfigResult,
+  ): RemoteSetupResult | null {
+    const option = result.Option;
+    if (!result.State) return null;
+    if (!option) {
+      throw badRequest(
+        result.Error ||
+          'rclone devolvió un estado de configuración pendiente sin una pregunta',
+      );
+    }
+    return {
+      status: 'question',
+      setupId,
+      remoteName,
+      state: result.State,
+      option: {
+        name: option.Name,
+        help: option.Help ?? '',
+        default: option.Default,
+        examples: option.Examples?.map((example) => ({
+          value: example.Value,
+          help: example.Help,
+        })),
+        required: Boolean(option.Required),
+        isPassword: Boolean(option.IsPassword),
+        type: option.Type ?? 'string',
+        exclusive: Boolean(option.Exclusive),
+      },
+      ...(result.Error ? { error: result.Error } : {}),
+    };
+  }
+
+  private startSetup(
+    remote: string,
+    type: string,
+    operation: 'create' | 'update',
+    owner: string,
+    parameters: Record<string, string>,
+    created: boolean,
+    result: RcConfigResult,
+  ): RemoteSetupResult | null {
+    if (!result.State) return null;
+    const setupId = randomUUID();
+    const question = this.setupQuestion(remote, setupId, result);
+    if (!question) return null;
+    this.setupSessions.set(setupId, {
+      remote,
+      type,
+      operation,
+      owner,
+      parameters,
+      created,
+      expiresAt: Date.now() + SETUP_SESSION_TTL_MS,
+    });
+    return question;
+  }
+
+  private requireSetup(setupId: string, remote: string, owner: string) {
+    const session = this.setupSessions.get(setupId);
+    if (
+      !session ||
+      session.remote !== remote ||
+      session.owner !== owner ||
+      session.expiresAt <= Date.now()
+    ) {
+      if (session?.expiresAt && session.expiresAt <= Date.now()) {
+        this.setupSessions.delete(setupId);
+      }
+      throw conflict('La sesión de configuración expiró o ya no es válida');
+    }
+    return session;
+  }
+
+  private async completedSetup(remote: string, type: string): Promise<RemoteSetupResult> {
+    this.invalidate(remote);
+    const probe = await this.probe(remote, 0);
+    return {
+      status: 'complete',
+      remote: {
+        name: remote,
+        type,
+        online: probe.online,
+        about: probe.about,
+        ...(probe.error ? { error: probe.error } : {}),
+      },
+    };
   }
 
   async types(): Promise<Record<string, string>> {
@@ -132,12 +245,30 @@ export class RemotesService {
     else this.probes.clear();
   }
 
+  /**
+   * rclone's OneDrive setup wizard can refresh a pasted/stored token while it
+   * discovers drives. Supplying the endpoint explicitly prevents that refresh
+   * from falling back to the base OAuth config, whose token URL is empty.
+   */
+  private addOnedriveTokenUrl(
+    payload: Record<string, string>,
+    current: Record<string, string> = {},
+  ): void {
+    if (payload.token_url || current.token_url) return;
+    const region = payload.region || current.region || 'global';
+    const host = ONEDRIVE_OAUTH_HOSTS[region];
+    if (!host) return;
+    const tenant = payload.tenant || current.tenant || 'common';
+    payload.token_url = `${host}/${tenant}/oauth2/v2.0/token`;
+  }
+
   async create(
     name: string,
     type: string,
     parameters: Record<string, string>,
-    token?: string,
-  ): Promise<RemoteSummary> {
+    token: string | undefined,
+    owner: string,
+  ): Promise<RemoteSetupResult> {
     const remote = sanitizeRemoteName(name);
     const existing = await this.rclone.listRemotes();
     if (existing.includes(remote)) throw conflict(`Ya existe un remoto llamado "${remote}"`);
@@ -150,26 +281,37 @@ export class RemotesService {
         payload.client_secret = GOOGLE_DRIVE_CLIENT_SECRET;
       }
     }
-    if (token) payload.token = this.normaliseToken(token);
+    if (token) {
+      payload.token = this.normaliseToken(token);
+      // `config_refresh_token` is an ephemeral rclone wizard answer. Without
+      // it, rclone asks whether it should replace the token we just supplied
+      // and can enter a second OAuth flow instead of finishing the backend.
+      payload.config_refresh_token = 'false';
+      if (type === 'onedrive') this.addOnedriveTokenUrl(payload);
+    }
 
-    await this.rclone.configCreate(remote, type, payload);
-    this.invalidate(remote);
-    const probe = await this.probe(remote, 0);
-
-    return {
-      name: remote,
+    const setup = await this.rclone.configCreate(remote, type, payload);
+    const question = this.startSetup(
+      remote,
       type,
-      online: probe.online,
-      about: probe.about,
-      ...(probe.error ? { error: probe.error } : {}),
-    };
+      'create',
+      owner,
+      payload,
+      true,
+      setup,
+    );
+    if (question) {
+      return question;
+    }
+    return this.completedSetup(remote, type);
   }
 
   async update(
     name: string,
     parameters: Record<string, string>,
-    token?: string,
-  ): Promise<RemoteSummary> {
+    token: string | undefined,
+    owner: string,
+  ): Promise<RemoteSetupResult> {
     const remote = sanitizeRemoteName(name);
     const config = await this.rclone.configGet(remote);
     if (!config || Object.keys(config).length === 0) {
@@ -182,19 +324,67 @@ export class RemotesService {
       if (SECRET_KEYS.test(key) && value === maskSecret('x')) continue;
       payload[key] = value;
     }
-    if (token) payload.token = this.normaliseToken(token);
+    if (token) {
+      payload.token = this.normaliseToken(token);
+      payload.config_refresh_token = 'false';
+    } else if (config.token) {
+      payload.config_refresh_token = 'false';
+    }
+    if (config.type === 'onedrive' && (token || config.token)) {
+      this.addOnedriveTokenUrl(payload, config);
+    }
 
-    await this.rclone.configUpdate(remote, payload);
+    const setup = await this.rclone.configUpdate(remote, payload);
+    const question = this.startSetup(
+      remote,
+      config.type ?? 'unknown',
+      'update',
+      owner,
+      payload,
+      false,
+      setup,
+    );
+    if (question) {
+      return question;
+    }
+    return this.completedSetup(remote, config.type ?? 'unknown');
+  }
+
+  async continueSetup(
+    name: string,
+    setupId: string,
+    owner: string,
+    state: string,
+    answer: string,
+  ): Promise<RemoteSetupResult> {
+    const remote = sanitizeRemoteName(name);
+    const session = this.requireSetup(setupId, remote, owner);
+    const setup = await this.rclone.configContinue(
+      session.operation,
+      remote,
+      session.type,
+      state,
+      answer,
+      session.parameters,
+    );
+    const question = this.setupQuestion(remote, setupId, setup);
+    if (question) {
+      session.expiresAt = Date.now() + SETUP_SESSION_TTL_MS;
+      return question;
+    }
+    this.setupSessions.delete(setupId);
+    const config = await this.rclone.configGet(remote);
+    return this.completedSetup(remote, config.type ?? 'unknown');
+  }
+
+  async cancelSetup(name: string, setupId: string, owner: string): Promise<boolean> {
+    const remote = sanitizeRemoteName(name);
+    const session = this.requireSetup(setupId, remote, owner);
+    this.setupSessions.delete(setupId);
+    if (!session.created) return false;
+    await this.rclone.configDelete(remote);
     this.invalidate(remote);
-    const probe = await this.probe(remote, 0);
-
-    return {
-      name: remote,
-      type: config.type ?? 'unknown',
-      online: probe.online,
-      about: probe.about,
-      ...(probe.error ? { error: probe.error } : {}),
-    };
+    return true;
   }
 
   async remove(name: string): Promise<void> {

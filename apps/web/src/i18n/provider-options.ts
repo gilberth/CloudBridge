@@ -1,4 +1,4 @@
-import type { ProviderOption } from '@cloudbridge/shared';
+import type { ProviderOption, RemoteSetupOption } from '@cloudbridge/shared';
 
 export type SupportedLocale = 'es';
 
@@ -93,5 +93,69 @@ export function localizeProviderOption(
       translation?.help ??
       `Configura la opción técnica ${option.name} para este proveedor.`,
     exampleHelp: (value: string) => translation?.examples?.[value],
+  };
+}
+
+const setupLabels: Record<string, { label: string; help: string }> = {
+  'onedrive.config_refresh_token': {
+    label: 'Renovar autorización OAuth',
+    help: 'Selecciona No para conservar el token actual; elige Sí únicamente si necesitas iniciar sesión de nuevo.',
+  },
+  'onedrive.config_is_local': {
+    label: 'Autorizar desde este equipo',
+    help: 'Indica si rclone debe abrir aquí el flujo de autorización en el navegador.',
+  },
+  'onedrive.config_type': {
+    label: 'Tipo de conexión',
+    help: 'Selecciona si conectarás OneDrive, SharePoint u otra ubicación compatible.',
+  },
+  'onedrive.config_driveid': {
+    label: 'Unidad de OneDrive',
+    help: 'Selecciona la unidad o biblioteca que este remoto debe utilizar.',
+  },
+  'onedrive.config_site_url': {
+    label: 'Sitio de SharePoint',
+    help: 'Selecciona o introduce el sitio de SharePoint que deseas utilizar.',
+  },
+  'onedrive.config_confirm': {
+    label: 'Confirmar unidad',
+    help: 'Confirma que la unidad mostrada es la ubicación correcta.',
+  },
+  'onedrive.config_drive_ok': {
+    label: 'Confirmar unidad',
+    help: 'Confirma que esta es la unidad de OneDrive que deseas utilizar.',
+  },
+};
+
+const setupExamples: Record<string, Record<string, string>> = {
+  'onedrive.config_type': {
+    onedrive: 'OneDrive personal o empresarial',
+    sharepoint: 'Sitio raíz de SharePoint',
+    url: 'Sitio de SharePoint mediante URL',
+    search: 'Buscar un sitio de SharePoint',
+    driveid: 'Introducir manualmente un ID de unidad',
+    siteid: 'Introducir manualmente un ID de sitio',
+    path: 'Ruta relativa del sitio de SharePoint',
+  },
+};
+
+export function localizeSetupOption(provider: string, option: RemoteSetupOption) {
+  const key = `${provider}.${option.name}`;
+  const translation = setupLabels[key];
+  return {
+    label: translation?.label ?? `Opción ${option.name}`,
+    help: translation?.help ?? `Completa la opción ${option.name} solicitada por rclone.`,
+    exampleHelp: (value: string, original: string) => {
+      if (value === 'true') return 'Sí';
+      if (value === 'false') return 'No';
+      const known = setupExamples[key]?.[value];
+      if (known) return known;
+      if (key === 'onedrive.config_driveid') {
+        if (/personal.*onedrive|onedrive.*personal/i.test(original)) return 'OneDrive personal';
+        if (/business/i.test(original)) return 'OneDrive empresarial';
+        if (/documents/i.test(original)) return 'Documentos';
+      }
+      return 'Opción disponible';
+    },
   };
 }

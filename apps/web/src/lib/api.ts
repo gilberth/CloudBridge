@@ -10,6 +10,7 @@ import type {
   RcloneHealth,
   RemoteDetail,
   RemoteSummary,
+  RemoteSetupResult,
   Run,
   SessionUser,
   SizeResult,
@@ -108,9 +109,22 @@ export const api = {
       type: string;
       parameters: Record<string, string>;
       token?: string;
-    }) => post<RemoteSummary>('/api/remotes', input),
+    }) => post<RemoteSetupResult>('/api/remotes', input),
     update: (name: string, input: { parameters: Record<string, string>; token?: string }) =>
-      put<RemoteSummary>(`/api/remotes/${encodeURIComponent(name)}`, input),
+      put<RemoteSetupResult>(`/api/remotes/${encodeURIComponent(name)}`, input),
+    continueSetup: (
+      name: string,
+      input: { setupId: string; state: string; answer: string },
+    ) =>
+      post<RemoteSetupResult>(
+        `/api/remotes/${encodeURIComponent(name)}/config/continue`,
+        input,
+      ),
+    cancelSetup: (name: string, setupId: string) =>
+      post<{ removed: boolean }>(
+        `/api/remotes/${encodeURIComponent(name)}/config/cancel`,
+        { setupId },
+      ),
     remove: (name: string) => del<void>(`/api/remotes/${encodeURIComponent(name)}`),
     test: (name: string) =>
       post<{ online: boolean; error: string | null }>(

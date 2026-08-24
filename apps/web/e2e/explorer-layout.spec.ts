@@ -7,6 +7,22 @@ const user = {
   createdAt: '2026-08-23T00:00:00.000Z',
 };
 
+const remotes = [
+  { name: 'drive', type: 'drive', online: true, about: null },
+  { name: 'ulima_drive', type: 'drive', online: true, about: null },
+];
+
+const entries = [
+  {
+    path: 'documento-largo.pdf',
+    name: 'documento-largo.pdf',
+    size: 12_345,
+    mimeType: 'application/pdf',
+    modTime: '2026-08-23T12:00:00.000Z',
+    isDir: false,
+  },
+];
+
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user } }));
@@ -24,7 +40,63 @@ test.beforeEach(async ({ page }) => {
       },
     }),
   );
-  await page.route('**/api/remotes', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/remotes', (route) => route.fulfill({ json: remotes }));
+  await page.route('**/api/fs/list**', (route) => {
+    const url = new URL(route.request().url());
+    return route.fulfill({
+      json: {
+        remote: url.searchParams.get('remote'),
+        path: url.searchParams.get('path') ?? '',
+        entries,
+      },
+    });
+  });
+});
+
+async function resizeNameColumn(
+  page: import('@playwright/test').Page,
+  panelName: 'Panel izquierdo' | 'Panel derecho',
+  delta: number,
+) {
+  const panel = page.getByLabel(panelName);
+  const handle = panel.getByRole('separator', { name: 'Redimensionar columna Nombre' });
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width / 2 + delta, box!.y + box!.height / 2);
+  await page.mouse.up();
+}
+
+async function nameColumnWidth(
+  page: import('@playwright/test').Page,
+  panelName: 'Panel izquierdo' | 'Panel derecho',
+) {
+  return page
+    .getByLabel(panelName)
+    .getByRole('columnheader', { name: /Nombre/ })
+    .evaluate((element) => element.getBoundingClientRect().width);
+}
+
+test('redimensiona una columna sin alterar el panel opuesto', async ({ page }) => {
+  await page.goto('/explorer?left=drive&right=ulima_drive');
+
+  const leftBefore = await nameColumnWidth(page, 'Panel izquierdo');
+  const rightBefore = await nameColumnWidth(page, 'Panel derecho');
+  await resizeNameColumn(page, 'Panel izquierdo', 80);
+
+  expect(await nameColumnWidth(page, 'Panel izquierdo')).toBeGreaterThan(leftBefore + 30);
+  expect(await nameColumnWidth(page, 'Panel derecho')).toBeCloseTo(rightBefore, 0);
+});
+
+test('conserva el ancho de las columnas después de recargar', async ({ page }) => {
+  await page.goto('/explorer?left=drive&right=ulima_drive');
+  await resizeNameColumn(page, 'Panel izquierdo', 80);
+  const resizedWidth = await nameColumnWidth(page, 'Panel izquierdo');
+
+  await page.reload();
+
+  expect(await nameColumnWidth(page, 'Panel izquierdo')).toBeCloseTo(resizedWidth, 0);
 });
 
 test('mantiene centradas y contenidas las acciones entre paneles', async ({ page }) => {

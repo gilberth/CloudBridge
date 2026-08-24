@@ -130,6 +130,14 @@ export interface RcProviderOption {
   Advanced?: boolean;
   Hide?: number;
   Type?: string;
+  Exclusive?: boolean;
+}
+
+export interface RcConfigResult {
+  State?: string;
+  Option?: RcProviderOption | null;
+  Error?: string;
+  Result?: string;
 }
 
 export interface RcProvider {

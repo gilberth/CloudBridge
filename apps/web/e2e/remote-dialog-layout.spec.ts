@@ -7,6 +7,8 @@ const user = {
   createdAt: '2026-08-23T00:00:00.000Z',
 };
 
+const setupId = '123e4567-e89b-42d3-a456-426614174000';
+
 const providers = [
   {
     name: 'onedrive',
@@ -169,4 +171,268 @@ test('apila los campos sin desbordarse en una ventana estrecha', async ({ page }
   expect(
     await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBe(true);
+});
+
+test('completa las preguntas posteriores al OAuth antes de cerrar el modal', async ({ page }) => {
+  let continuation = 0;
+  await page.route('**/api/remotes', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    await route.fulfill({
+      status: 201,
+      json: {
+        status: 'question',
+        setupId,
+        remoteName: 'onedrive',
+        state: '*oauth-confirm,refresh,',
+        option: {
+          name: 'config_refresh_token',
+          help: 'Refresh token?',
+          default: true,
+          examples: [
+            { value: 'true', help: 'Yes' },
+            { value: 'false', help: 'No' },
+          ],
+          required: true,
+          isPassword: false,
+          type: 'string',
+          exclusive: true,
+        },
+      },
+    });
+  });
+  await page.route('**/api/remotes/onedrive/config/continue', async (route) => {
+    continuation += 1;
+    if (continuation === 1) {
+      await route.fulfill({
+        json: {
+          status: 'question',
+          setupId,
+          remoteName: 'onedrive',
+          state: '*oauth-confirm,choose_type,,',
+          option: {
+            name: 'config_type',
+            help: 'Type of connection',
+            default: 'onedrive',
+            examples: [
+              { value: 'onedrive', help: 'OneDrive Personal or Business' },
+              { value: 'sharepoint', help: 'Root SharePoint site' },
+            ],
+            required: true,
+            isPassword: false,
+            type: 'string',
+            exclusive: true,
+          },
+        },
+      });
+      return;
+    }
+    if (continuation === 2) {
+      await route.fulfill({
+        json: {
+          status: 'question',
+          setupId,
+          remoteName: 'onedrive',
+          state: 'driveid_final',
+          option: {
+            name: 'config_driveid',
+            help: 'Select drive you want to use',
+            default: 'drive-business',
+            examples: [{ value: 'drive-business', help: 'OneDrive (business)' }],
+            required: true,
+            isPassword: false,
+            type: 'string',
+            exclusive: true,
+          },
+        },
+      });
+      return;
+    }
+    if (continuation === 3) {
+      await route.fulfill({
+        json: {
+          status: 'question',
+          setupId,
+          remoteName: 'onedrive',
+          state: 'driveid_final_end',
+          option: {
+            name: 'config_drive_ok',
+            help: 'Drive OK?',
+            default: true,
+            examples: [
+              { value: 'true', help: 'Yes' },
+              { value: 'false', help: 'No' },
+            ],
+            required: true,
+            isPassword: false,
+            type: 'bool',
+            exclusive: true,
+          },
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        status: 'complete',
+        remote: {
+          name: 'onedrive',
+          type: 'onedrive',
+          online: true,
+          about: { total: 100, used: 10 },
+        },
+      },
+    });
+  });
+
+  const dialog = await openOneDriveDialog(page);
+  await dialog.getByRole('textbox', { name: 'Nombre del remoto' }).fill('onedrive');
+  await dialog
+    .getByRole('textbox', { name: 'Token OAuth' })
+    .fill('{"access_token":"token"}');
+  await dialog.getByRole('button', { name: 'Crear remoto' }).click();
+
+  await expect(dialog.getByText('Renovar autorización OAuth')).toBeVisible();
+  await dialog.getByRole('combobox', { name: 'Renovar autorización OAuth' }).click();
+  await page.getByRole('option', { name: /^No/ }).click();
+  await dialog.getByRole('button', { name: 'Continuar' }).click();
+
+  await dialog.getByRole('combobox', { name: 'Tipo de conexión' }).click();
+  await page.getByRole('option', { name: /OneDrive personal o empresarial/ }).click();
+  await dialog.getByRole('button', { name: 'Continuar' }).click();
+
+  await expect(dialog.getByText('OneDrive empresarial')).toBeVisible();
+  await dialog.getByRole('combobox', { name: 'Unidad de OneDrive' }).click();
+  await page.getByRole('option', { name: /OneDrive empresarial/ }).click();
+  await dialog.getByRole('button', { name: 'Continuar' }).click();
+
+  await expect(dialog.getByText('Confirmar unidad')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Continuar' }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(continuation).toBe(4);
+});
+
+test('limpia un remoto nuevo si se cancela el asistente', async ({ page }) => {
+  let cancellations = 0;
+  await page.route('**/api/remotes', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    await route.fulfill({
+      status: 201,
+      json: {
+        status: 'question',
+        setupId,
+        remoteName: 'onedrive-cancelado',
+        state: '*oauth-confirm,refresh,',
+        option: {
+          name: 'config_refresh_token',
+          help: 'Refresh token?',
+          default: true,
+          examples: [
+            { value: 'true', help: 'Yes' },
+            { value: 'false', help: 'No' },
+          ],
+          required: true,
+          isPassword: false,
+          type: 'bool',
+          exclusive: true,
+        },
+      },
+    });
+  });
+  await page.route('**/api/remotes/onedrive-cancelado/config/cancel', async (route) => {
+    cancellations += 1;
+    await route.fulfill({ json: { removed: true } });
+  });
+
+  const dialog = await openOneDriveDialog(page);
+  await dialog.getByRole('textbox', { name: 'Nombre del remoto' }).fill('onedrive-cancelado');
+  await dialog
+    .getByRole('textbox', { name: 'Token OAuth' })
+    .fill('{"access_token":"token"}');
+  await dialog.getByRole('button', { name: 'Crear remoto' }).click();
+  await expect(dialog.getByText('Renovar autorización OAuth')).toBeVisible();
+
+  await dialog.getByRole('button', { name: 'Cancelar' }).click();
+
+  await expect(dialog).toBeHidden();
+  expect(cancellations).toBe(1);
+});
+
+test('permite escribir una respuesta cuando rclone ofrece ejemplos no exclusivos', async ({
+  page,
+}) => {
+  await page.route('**/api/remotes', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    await route.fulfill({
+      status: 201,
+      json: {
+        status: 'question',
+        setupId,
+        remoteName: 'onedrive-personalizado',
+        state: 'custom-site',
+        option: {
+          name: 'custom_site',
+          help: 'Enter a site or select an example',
+          default: '',
+          examples: [{ value: 'example', help: 'Example site' }],
+          required: true,
+          isPassword: false,
+          type: 'string',
+          exclusive: false,
+        },
+      },
+    });
+  });
+
+  const dialog = await openOneDriveDialog(page);
+  await dialog
+    .getByRole('textbox', { name: 'Nombre del remoto' })
+    .fill('onedrive-personalizado');
+  await dialog.getByRole('button', { name: 'Crear remoto' }).click();
+
+  await expect(dialog.getByRole('textbox', { name: 'Opción custom_site' })).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Opción custom_site' })).toHaveCount(0);
+});
+
+test('no reutiliza el token de un alta anterior al editar otro remoto', async ({ page }) => {
+  let updateBody: Record<string, unknown> | null = null;
+  const remote = {
+    name: 'onedrive-existente',
+    type: 'onedrive',
+    online: true,
+    about: { total: 100, used: 10 },
+  };
+  await page.route('**/api/remotes', async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    await route.fulfill({ json: [remote] });
+  });
+  await page.route('**/api/remotes/onedrive-existente', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        json: { ...remote, parameters: { type: 'onedrive', token: '••••••••' } },
+      });
+      return;
+    }
+    if (route.request().method() === 'PUT') {
+      updateBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ json: { status: 'complete', remote } });
+      return;
+    }
+    await route.fallback();
+  });
+
+  const createDialog = await openOneDriveDialog(page);
+  await createDialog
+    .getByRole('textbox', { name: 'Token OAuth' })
+    .fill('{"access_token":"no-reutilizar"}');
+  await createDialog.getByRole('button', { name: 'Cancelar' }).click();
+
+  await page.getByRole('button', { name: 'Editar' }).click();
+  const editDialog = page.getByRole('dialog', { name: 'Editar "onedrive-existente"' });
+  await expect(editDialog).toBeVisible();
+  await editDialog.getByRole('button', { name: 'Guardar cambios' }).click();
+  await expect(editDialog).toBeHidden();
+
+  expect(updateBody).not.toBeNull();
+  expect(updateBody).not.toHaveProperty('token');
 });

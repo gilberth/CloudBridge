@@ -5,12 +5,17 @@ import {
   ChevronRight,
   Cloud,
   KeyRound,
+  ListChecks,
   LoaderCircle,
   Settings2,
   Terminal,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ProviderInfo, ProviderOption } from '@cloudbridge/shared';
+import type {
+  ProviderInfo,
+  ProviderOption,
+  RemoteSetupResult,
+} from '@cloudbridge/shared';
 import { ApiError, api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,6 +39,16 @@ import {
 } from '@/components/ui/command';
 import { ProviderIcon } from '@/components/provider-icon';
 import { ProviderField } from './ProviderField';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { localizeSetupOption } from '@/i18n/provider-options';
+
+type SetupQuestion = Extract<RemoteSetupResult, { status: 'question' }>;
 
 /** Options every provider gets, ordered so the important ones come first. */
 function visibleOptions(
@@ -75,6 +90,8 @@ export function RemoteDialog({
   const [values, setValues] = useState<Record<string, string>>({});
   const [token, setToken] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [setupQuestion, setSetupQuestion] = useState<SetupQuestion | null>(null);
+  const [setupAnswer, setSetupAnswer] = useState('');
 
   const providersQuery = useQuery({
     queryKey: ['providers'],
@@ -91,6 +108,10 @@ export function RemoteDialog({
 
   useEffect(() => {
     if (!open) return;
+    setToken('');
+    setShowAdvanced(false);
+    setSetupQuestion(null);
+    setSetupAnswer('');
     if (editing && detailQuery.data) {
       setType(detailQuery.data.type);
       setName(detailQuery.data.name);
@@ -100,8 +121,6 @@ export function RemoteDialog({
       setType(null);
       setName('');
       setValues({});
-      setToken('');
-      setShowAdvanced(false);
     }
   }, [open, editing, detailQuery.data]);
 
@@ -116,6 +135,13 @@ export function RemoteDialog({
 
   const save = useMutation({
     mutationFn: async () => {
+      if (setupQuestion) {
+        return api.remotes.continueSetup(setupQuestion.remoteName, {
+          setupId: setupQuestion.setupId,
+          state: setupQuestion.state,
+          answer: setupAnswer,
+        });
+      }
       const parameters = Object.fromEntries(
         Object.entries(values).filter(([, value]) => value !== ''),
       );
@@ -129,7 +155,17 @@ export function RemoteDialog({
         ...(token ? { token } : {}),
       });
     },
-    onSuccess: (remote) => {
+    onSuccess: (result) => {
+      if (result.status === 'question') {
+        setSetupQuestion(result);
+        setSetupAnswer(
+          result.option.default === undefined || result.option.default === null
+            ? ''
+            : String(result.option.default),
+        );
+        return;
+      }
+      const remote = result.remote;
       void queryClient.invalidateQueries({ queryKey: ['remotes'] });
       void queryClient.invalidateQueries({ queryKey: ['remote', remote.name] });
       toast.success(
@@ -150,10 +186,34 @@ export function RemoteDialog({
       }),
   });
 
-  const canSave = Boolean(type) && (editing ? true : name.trim().length > 0);
+  const canSave = setupQuestion
+    ? !setupQuestion.option.required || setupAnswer.length > 0
+    : Boolean(type) && (editing ? true : name.trim().length > 0);
+
+  const closeDialog = () => {
+    const incompleteSetup = setupQuestion;
+    setSetupQuestion(null);
+    setSetupAnswer('');
+    onOpenChange(false);
+    if (!incompleteSetup) return;
+    void api.remotes
+      .cancelSetup(incompleteSetup.remoteName, incompleteSetup.setupId)
+      .then(() => queryClient.invalidateQueries({ queryKey: ['remotes'] }))
+      .catch((error) =>
+        toast.error('No se pudo cancelar la configuración', {
+          description: error instanceof ApiError ? error.message : String(error),
+        }),
+      );
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) onOpenChange(true);
+        else closeDialog();
+      }}
+    >
       <DialogContent
         data-remote-dialog="true"
         className="w-[calc(100%_-_2rem)] max-w-[720px] overflow-hidden p-0"
@@ -169,7 +229,14 @@ export function RemoteDialog({
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
-            {!type && (
+            {setupQuestion ? (
+              <SetupQuestionCard
+                provider={type ?? 'unknown'}
+                question={setupQuestion}
+                answer={setupAnswer}
+                onAnswerChange={setSetupAnswer}
+              />
+            ) : !type ? (
               <div className="overflow-hidden rounded-lg border border-border">
                 {providersQuery.isPending ? (
                   <div className="space-y-1 p-2">
@@ -200,9 +267,9 @@ export function RemoteDialog({
                   </Command>
                 )}
               </div>
-            )}
+            ) : null}
 
-            {type && (
+            {type && !setupQuestion && (
               <div className="space-y-4">
                 <div className="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
                   <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10">
@@ -318,17 +385,86 @@ export function RemoteDialog({
           </div>
 
           <DialogFooter className="mt-0 border-t border-border/70 bg-muted/10 px-5 py-4">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            <Button variant="ghost" onClick={closeDialog}>
               Cancelar
             </Button>
             <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
               {save.isPending && <LoaderCircle className="animate-spin" />}
-              {editing ? 'Guardar cambios' : 'Crear remoto'}
+              {setupQuestion ? 'Continuar' : editing ? 'Guardar cambios' : 'Crear remoto'}
             </Button>
           </DialogFooter>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function SetupQuestionCard({
+  provider,
+  question,
+  answer,
+  onAnswerChange,
+}: {
+  provider: string;
+  question: SetupQuestion;
+  answer: string;
+  onAnswerChange: (value: string) => void;
+}) {
+  const translation = localizeSetupOption(provider, question.option);
+  const id = `setup-${question.option.name}`;
+  const examples = question.option.examples ?? [];
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-primary/30 bg-primary/5">
+      <SectionHeading
+        icon={ListChecks}
+        title="Completa la configuración"
+        description="rclone necesita un dato adicional antes de activar este remoto."
+      />
+      <div className="space-y-3 p-4">
+        <div className="space-y-1.5">
+          <Label htmlFor={id}>
+            {translation.label}
+            {question.option.required && <span className="ml-1 text-destructive">*</span>}
+          </Label>
+          <p className="text-[11px] leading-4 text-muted-foreground">{translation.help}</p>
+          {examples.length > 0 && question.option.exclusive ? (
+            <Select value={answer} onValueChange={onAnswerChange}>
+              <SelectTrigger id={id}>
+                <SelectValue placeholder="Selecciona una opción" />
+              </SelectTrigger>
+              <SelectContent>
+                {examples.map((example) => (
+                  <SelectItem key={example.value} value={example.value}>
+                    <span>{translation.exampleHelp(example.value, example.help)}</span>
+                    <span className="ml-2 mono text-[10px] text-muted-foreground">
+                      {example.value}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id={id}
+              type={question.option.isPassword ? 'password' : 'text'}
+              value={answer}
+              placeholder={
+                question.option.default === undefined
+                  ? undefined
+                  : String(question.option.default)
+              }
+              onChange={(event) => onAnswerChange(event.target.value)}
+            />
+          )}
+        </div>
+        {question.error && (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+            {question.error}
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -407,7 +543,8 @@ function OAuthHelp({
             <Label htmlFor="oauth-token">Token OAuth</Label>
             <FieldHelp label="Token OAuth">
               Pega el JSON completo que devuelve rclone authorize. Incluye los tokens de
-              acceso y renovación necesarios para conectar el remoto.
+              acceso y renovación necesarios para conectar el remoto. Si lo completas,
+              CloudBridge conservará este token y no volverá a pedir autenticación.
             </FieldHelp>
           </div>
           <textarea

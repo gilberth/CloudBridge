@@ -60,6 +60,16 @@ export const updateRemoteSchema = z.object({
   token: z.string().max(8192).optional(),
 });
 
+export const continueRemoteSetupSchema = z.object({
+  setupId: z.string().uuid(),
+  state: z.string().min(1).max(8192),
+  answer: z.string().max(8192),
+});
+
+export const cancelRemoteSetupSchema = z.object({
+  setupId: z.string().uuid(),
+});
+
 export const fsListQuerySchema = z.object({
   remote: remoteNameSchema,
   path: remotePathStringSchema.default(''),

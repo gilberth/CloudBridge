@@ -1,10 +1,11 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type ColumnSizingState,
   type SortingState,
 } from '@tanstack/react-table';
 import { useDraggable } from '@dnd-kit/core';
@@ -27,6 +28,41 @@ const COMPARE_STYLES: Record<CompareCategory, string> = {
   differ: 'bg-cmp-differ/10 text-cmp-differ',
   identical: 'text-cmp-same',
 };
+
+const DEFAULT_COLUMN_SIZING: ColumnSizingState = {
+  name: 180,
+  size: 90,
+  modTime: 140,
+};
+
+const columnSizingStorageKey = (side: 'left' | 'right') =>
+  `cloudbridge.explorer.${side}ColumnSizing`;
+
+function readColumnSizing(side: 'left' | 'right'): ColumnSizingState {
+  try {
+    const stored = window.localStorage.getItem(columnSizingStorageKey(side));
+    if (!stored) return DEFAULT_COLUMN_SIZING;
+    const parsed = JSON.parse(stored) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(DEFAULT_COLUMN_SIZING).map(([key, fallback]) => [
+        key,
+        typeof parsed[key] === 'number' && Number.isFinite(parsed[key])
+          ? parsed[key]
+          : fallback,
+      ]),
+    );
+  } catch {
+    return DEFAULT_COLUMN_SIZING;
+  }
+}
+
+function storeColumnSizing(side: 'left' | 'right', sizing: ColumnSizingState) {
+  try {
+    window.localStorage.setItem(columnSizingStorageKey(side), JSON.stringify(sizing));
+  } catch {
+    // Resizing still works for this session when storage is unavailable.
+  }
+}
 
 export function FileTable({
   entries,
@@ -52,12 +88,16 @@ export function FileTable({
 }) {
   const allSelected = entries.length > 0 && selected.size === entries.length;
   const someSelected = selected.size > 0 && !allSelected;
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() =>
+    readColumnSizing(side),
+  );
 
   const columns = useMemo<ColumnDef<FileRow>[]>(
     () => [
       {
         id: 'select',
         size: 32,
+        enableResizing: false,
         header: () => (
           <Checkbox
             aria-label="Seleccionar todo"
@@ -89,6 +129,9 @@ export function FileTable({
         id: 'name',
         header: 'Nombre',
         accessorKey: 'name',
+        size: DEFAULT_COLUMN_SIZING.name,
+        minSize: 120,
+        maxSize: 800,
         sortingFn: (a, b) => {
           if (a.original.isDir !== b.original.isDir) return a.original.isDir ? -1 : 1;
           return a.original.name.localeCompare(b.original.name, 'es', { numeric: true });
@@ -108,6 +151,8 @@ export function FileTable({
         header: 'Tamaño',
         accessorKey: 'size',
         size: 90,
+        minSize: 72,
+        maxSize: 220,
         cell: ({ row }) => (
           <span className="tabular-nums text-muted-foreground">
             {row.original.isDir ? '—' : humanBytes(row.original.size)}
@@ -119,6 +164,8 @@ export function FileTable({
         header: 'Modificado',
         accessorKey: 'modTime',
         size: 140,
+        minSize: 110,
+        maxSize: 280,
         cell: ({ row }) => (
           <span className="tabular-nums text-muted-foreground">
             {formatDateTime(row.original.modTime)}
@@ -128,6 +175,7 @@ export function FileTable({
       {
         id: 'actions',
         size: 32,
+        enableResizing: false,
         header: () => null,
         enableSorting: false,
         cell: ({ row }) => (
@@ -158,24 +206,40 @@ export function FileTable({
   const table = useReactTable({
     data: entries,
     columns,
-    state: { sorting },
+    state: { sorting, columnSizing },
     onSortingChange: (updater) =>
       onSortingChange(typeof updater === 'function' ? updater(sorting) : updater),
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    columnResizeMode: 'onChange',
+    enableColumnResizing: true,
+    onColumnSizingChange: (updater) =>
+      setColumnSizing((current) => {
+        const next = typeof updater === 'function' ? updater(current) : updater;
+        storeColumnSizing(side, next);
+        return next;
+      }),
   });
 
   return (
-    <table className="w-full border-collapse text-[13px]">
+    <table
+      className="min-w-full table-fixed border-collapse text-[13px]"
+      style={{ width: table.getTotalSize() }}
+    >
+      <colgroup>
+        {table.getAllLeafColumns().map((column) => (
+          <col key={column.id} style={{ width: column.getSize() }} />
+        ))}
+      </colgroup>
       <thead className="sticky top-0 z-10 bg-surface">
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id} className="border-b border-border">
             {headerGroup.headers.map((header) => (
               <th
                 key={header.id}
-                style={{ width: header.column.columnDef.size }}
+                style={{ width: header.getSize() }}
                 className={cn(
-                  'px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground',
+                  'relative px-2 py-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground',
                   header.column.getCanSort() && 'cursor-pointer select-none hover:text-foreground',
                 )}
                 onClick={header.column.getToggleSortingHandler()}
@@ -185,6 +249,20 @@ export function FileTable({
                   {header.column.getIsSorted() === 'asc' && <ArrowUp className="size-3" />}
                   {header.column.getIsSorted() === 'desc' && <ArrowDown className="size-3" />}
                 </span>
+                {header.column.getCanResize() && (
+                  <ColumnResizeHandle
+                    label={String(header.column.columnDef.header)}
+                    resizing={header.column.getIsResizing()}
+                    onMouseDown={header.getResizeHandler()}
+                    onTouchStart={header.getResizeHandler()}
+                    onKeyboardResize={(delta) =>
+                      table.setColumnSizing((current) => ({
+                        ...current,
+                        [header.column.id]: header.column.getSize() + delta,
+                      }))
+                    }
+                  />
+                )}
               </th>
             ))}
           </tr>
@@ -230,6 +308,52 @@ export function FileTable({
         ))}
       </tbody>
     </table>
+  );
+}
+
+function ColumnResizeHandle({
+  label,
+  resizing,
+  onMouseDown,
+  onTouchStart,
+  onKeyboardResize,
+}: {
+  label: string;
+  resizing: boolean;
+  onMouseDown: React.MouseEventHandler<HTMLDivElement>;
+  onTouchStart: React.TouchEventHandler<HTMLDivElement>;
+  onKeyboardResize: (delta: number) => void;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={`Redimensionar columna ${label}`}
+      aria-orientation="vertical"
+      tabIndex={0}
+      className="group/resize absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none select-none outline-none"
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => {
+        event.stopPropagation();
+        onMouseDown(event);
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+        onTouchStart(event);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        event.stopPropagation();
+        onKeyboardResize(event.key === 'ArrowLeft' ? -10 : 10);
+      }}
+    >
+      <span
+        className={cn(
+          'absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border transition-colors group-hover/resize:bg-primary group-focus/resize:bg-primary',
+          resizing && 'bg-primary',
+        )}
+      />
+    </div>
   );
 }
 

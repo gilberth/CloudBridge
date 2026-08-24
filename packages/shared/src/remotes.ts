@@ -20,6 +20,29 @@ export interface RemoteDetail extends RemoteSummary {
   parameters: Record<string, string>;
 }
 
+export interface RemoteSetupOption {
+  name: string;
+  help: string;
+  default?: unknown;
+  examples?: { value: string; help: string }[];
+  required: boolean;
+  isPassword: boolean;
+  type: string;
+  exclusive: boolean;
+}
+
+export type RemoteSetupResult =
+  | { status: 'complete'; remote: RemoteSummary }
+  | {
+      status: 'question';
+      /** Opaque server-side wizard session. It must be sent back unchanged. */
+      setupId: string;
+      remoteName: string;
+      state: string;
+      option: RemoteSetupOption;
+      error?: string;
+    };
+
 /** One field of a provider's configuration form, derived from `config/providers`. */
 export interface ProviderOption {
   name: string;

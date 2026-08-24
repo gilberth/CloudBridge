@@ -134,6 +134,33 @@ describe('RcloneClient', () => {
     expect(JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string)).toEqual({});
   });
 
+  it('continues a new remote through config/create with the exact state and answer', async () => {
+    fetchMock = mockFetch({ State: '', Error: '' });
+
+    await client(fetchMock as unknown as typeof fetch).configContinue(
+      'create',
+      'onedrive',
+      'onedrive',
+      '*oauth-confirm,choose_type,,',
+      'onedrive',
+      { token: 'oauth-token', region: 'global' },
+    );
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://rclone.internal:5572/config/create');
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: 'onedrive',
+      type: 'onedrive',
+      parameters: { token: 'oauth-token', region: 'global' },
+      opt: {
+        nonInteractive: true,
+        continue: true,
+        state: '*oauth-confirm,choose_type,,',
+        result: 'onedrive',
+      },
+    });
+  });
+
   it('check() sets sensible defaults for the comparison flags', async () => {
     fetchMock = mockFetch({ combined: [] });
     await client(fetchMock as unknown as typeof fetch).check('a:', 'b:');

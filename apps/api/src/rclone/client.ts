@@ -2,6 +2,7 @@ import type {
   RcAbout,
   RcAsyncResult,
   RcCheckResult,
+  RcConfigResult,
   RcCoreStats,
   RcCoreVersion,
   RcFsInfo,
@@ -265,8 +266,8 @@ export class RcloneClient {
     name: string,
     type: string,
     parameters: Record<string, string>,
-  ): Promise<unknown> {
-    return this.call('config/create', {
+  ): Promise<RcConfigResult> {
+    return this.call<RcConfigResult>('config/create', {
       name,
       type,
       parameters,
@@ -274,11 +275,32 @@ export class RcloneClient {
     });
   }
 
-  configUpdate(name: string, parameters: Record<string, string>): Promise<unknown> {
-    return this.call('config/update', {
+  configUpdate(name: string, parameters: Record<string, string>): Promise<RcConfigResult> {
+    return this.call<RcConfigResult>('config/update', {
       name,
       parameters,
       opt: { nonInteractive: true, obscure: true },
+    });
+  }
+
+  configContinue(
+    operation: 'create' | 'update',
+    name: string,
+    type: string,
+    state: string,
+    result: string,
+    parameters: Record<string, string>,
+  ): Promise<RcConfigResult> {
+    return this.call<RcConfigResult>(`config/${operation}`, {
+      name,
+      ...(operation === 'create' ? { type } : {}),
+      parameters,
+      opt: {
+        nonInteractive: true,
+        continue: true,
+        state,
+        result,
+      },
     });
   }
 
