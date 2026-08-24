@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
+import { RcloneClient } from '../../rclone/client.js';
 import { RemotesService } from '../remotes.js';
 
 const onedriveQuestion = {
@@ -17,6 +18,84 @@ const onedriveQuestion = {
   },
   Error: '',
 };
+
+describe('RemotesService config import', () => {
+  it('preserves secrets that are already obscured in rclone.conf', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const endpoint = String(input).split('/').at(-1);
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+
+      if (endpoint === 'listremotes') return Response.json({ remotes: [] });
+
+      expect(endpoint).toBe('create');
+      expect(body).toEqual({
+        name: 'icloud-lxc',
+        type: 'iclouddrive',
+        parameters: {
+          apple_id: 'cuenta@example.com',
+          password: 'secreto-ya-ofuscado',
+          trust_token: 'token-ya-ofuscado',
+        },
+        opt: { nonInteractive: true, noObscure: true },
+      });
+      return Response.json({});
+    });
+    const app = {
+      rclone: new RcloneClient({
+        url: 'http://rclone.internal:5572',
+        user: 'cloudbridge',
+        password: 'secret',
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      }),
+    } as unknown as FastifyInstance;
+
+    const imported = await new RemotesService(app).importConfig(`[icloud-lxc]
+type = iclouddrive
+apple_id = cuenta@example.com
+password = secreto-ya-ofuscado
+trust_token = token-ya-ofuscado
+`);
+
+    expect(imported).toBe(1);
+  });
+
+  it('preserves obscured secrets when replacing an existing remote', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const endpoint = String(input).split('/').at(-1);
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+
+      if (endpoint === 'listremotes') return Response.json({ remotes: ['icloud-lxc'] });
+
+      expect(endpoint).toBe('update');
+      expect(body).toEqual({
+        name: 'icloud-lxc',
+        parameters: {
+          type: 'iclouddrive',
+          apple_id: 'cuenta@example.com',
+          password: 'secreto-ya-ofuscado',
+        },
+        opt: { nonInteractive: true, noObscure: true },
+      });
+      return Response.json({});
+    });
+    const app = {
+      rclone: new RcloneClient({
+        url: 'http://rclone.internal:5572',
+        user: 'cloudbridge',
+        password: 'secret',
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      }),
+    } as unknown as FastifyInstance;
+
+    const imported = await new RemotesService(app).importConfig(`[icloud-lxc]
+type = iclouddrive
+apple_id = cuenta@example.com
+password = secreto-ya-ofuscado
+`);
+
+    expect(imported).toBe(1);
+  });
+});
 
 describe('RemotesService configuration wizard', () => {
   it('uses a pasted OAuth token without asking rclone to replace it', async () => {

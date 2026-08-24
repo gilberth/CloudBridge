@@ -134,6 +134,20 @@ describe('RcloneClient', () => {
     expect(JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string)).toEqual({});
   });
 
+  it('obscures plain secrets when creating a remote from the GUI', async () => {
+    await client(fetchMock as unknown as typeof fetch).configCreate('icloud', 'iclouddrive', {
+      password: 'plain-secret',
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: 'icloud',
+      type: 'iclouddrive',
+      parameters: { password: 'plain-secret' },
+      opt: { nonInteractive: true, obscure: true },
+    });
+  });
+
   it('continues a new remote through config/create with the exact state and answer', async () => {
     fetchMock = mockFetch({ State: '', Error: '' });
 

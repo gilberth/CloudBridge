@@ -266,20 +266,29 @@ export class RcloneClient {
     name: string,
     type: string,
     parameters: Record<string, string>,
+    options: { secretsAlreadyObscured?: boolean } = {},
   ): Promise<RcConfigResult> {
     return this.call<RcConfigResult>('config/create', {
       name,
       type,
       parameters,
-      opt: { nonInteractive: true, obscure: true },
+      opt: options.secretsAlreadyObscured
+        ? { nonInteractive: true, noObscure: true }
+        : { nonInteractive: true, obscure: true },
     });
   }
 
-  configUpdate(name: string, parameters: Record<string, string>): Promise<RcConfigResult> {
+  configUpdate(
+    name: string,
+    parameters: Record<string, string>,
+    options: { secretsAlreadyObscured?: boolean } = {},
+  ): Promise<RcConfigResult> {
     return this.call<RcConfigResult>('config/update', {
       name,
       parameters,
-      opt: { nonInteractive: true, obscure: true },
+      opt: options.secretsAlreadyObscured
+        ? { nonInteractive: true, noObscure: true }
+        : { nonInteractive: true, obscure: true },
     });
   }
 

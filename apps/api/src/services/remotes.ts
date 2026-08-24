@@ -470,9 +470,15 @@ export class RemotesService {
       const { type, ...parameters } = section.values;
       if (!type) continue;
       if (existing.has(section.name)) {
-        await this.rclone.configUpdate(section.name, { type, ...parameters });
+        await this.rclone.configUpdate(
+          section.name,
+          { type, ...parameters },
+          { secretsAlreadyObscured: true },
+        );
       } else {
-        await this.rclone.configCreate(section.name, type, parameters);
+        await this.rclone.configCreate(section.name, type, parameters, {
+          secretsAlreadyObscured: true,
+        });
       }
       imported += 1;
     }
