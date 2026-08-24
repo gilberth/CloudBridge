@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, ScrollText, Search } from 'lucide-react';
+import { CalendarDays, Download, ScrollText, Search } from 'lucide-react';
 import type { LogLevel } from '@cloudbridge/shared';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -27,6 +27,52 @@ const LEVEL_VARIANT: Record<LogLevel, 'outline' | 'info' | 'warning' | 'danger'>
 };
 
 const PAGE_SIZE = 100;
+
+interface DateTimeFilterProps {
+  label: 'Desde' | 'Hasta';
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function DateTimeFilter({ label, value, onChange }: DateTimeFilterProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const accessibleLabel = label.toLowerCase();
+
+  const openPicker = () => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    try {
+      input.showPicker?.();
+    } catch {
+      // Focusing the native control is the fallback when showPicker is unavailable.
+    }
+  };
+
+  return (
+    <div className="flex h-8 w-[13.5rem] shrink-0 items-center overflow-hidden rounded-md border border-input bg-background transition-colors focus-within:border-ring">
+      <span className="flex h-full shrink-0 items-center border-r border-border px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <Input
+        ref={inputRef}
+        aria-label={`Fecha y hora ${accessibleLabel}`}
+        type="datetime-local"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-7 min-w-0 flex-1 rounded-none border-0 bg-transparent px-2 py-0 text-xs tabular-nums focus-visible:border-transparent [&::-webkit-calendar-picker-indicator]:hidden"
+      />
+      <button
+        type="button"
+        aria-label={`Abrir calendario ${accessibleLabel}`}
+        onClick={openPicker}
+        className="flex h-full w-8 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-accent hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        <CalendarDays className="size-3.5" />
+      </button>
+    </div>
+  );
+}
 
 export default function LogsPage() {
   const [level, setLevel] = useState<LogLevel | 'all'>('all');
@@ -73,7 +119,7 @@ export default function LogsPage() {
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <Select value={level} onValueChange={(value) => resetAndSet(setLevel)(value as LogLevel | 'all')}>
-          <SelectTrigger className="w-32">
+          <SelectTrigger className="w-44 shrink-0 whitespace-nowrap text-left">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -88,6 +134,7 @@ export default function LogsPage() {
         <div className="relative w-56">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label="Buscar en los logs"
             value={search}
             onChange={(event) => resetAndSet(setSearch)(event.target.value)}
             placeholder="Buscar en el mensaje…"
@@ -95,18 +142,18 @@ export default function LogsPage() {
           />
         </div>
 
-        <Input
-          type="datetime-local"
+        <DateTimeFilter
+          label="Desde"
           value={from}
-          onChange={(event) => resetAndSet(setFrom)(event.target.value)}
-          className="w-44"
+          onChange={(value) => resetAndSet(setFrom)(value)}
         />
-        <span className="text-muted-foreground">–</span>
-        <Input
-          type="datetime-local"
+        <span aria-hidden="true" className="text-xs text-muted-foreground">
+          →
+        </span>
+        <DateTimeFilter
+          label="Hasta"
           value={to}
-          onChange={(event) => resetAndSet(setTo)(event.target.value)}
-          className="w-44"
+          onChange={(value) => resetAndSet(setTo)(value)}
         />
       </div>
 
