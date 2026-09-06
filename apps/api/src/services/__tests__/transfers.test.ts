@@ -71,4 +71,34 @@ describe("TransferService", () => {
       }),
     );
   });
+
+  it("notifica también cuando termina una transferencia manual", async () => {
+    let stored = { ...runningRun(), rcloneJobIds: [42] };
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const app = {
+      rclone: {
+        jobStatus: vi.fn().mockResolvedValue({
+          finished: true,
+          success: true,
+          error: "",
+        }),
+        stats: vi.fn().mockResolvedValue({ transfers: 1, bytes: 1024, errors: 0 }),
+      },
+      runs: {
+        active: vi.fn().mockReturnValue([stored]),
+        update: vi.fn((_id: string, patch: Partial<Run>) => {
+          stored = { ...stored, ...patch };
+        }),
+        get: vi.fn(() => stored),
+      },
+      bandwidth: { release: vi.fn().mockResolvedValue(undefined) },
+      logs: { write: vi.fn() },
+      stats: { emitRunFinished: vi.fn() },
+      notifications: { send: notify },
+    } as unknown as FastifyInstance;
+
+    await new TransferService(app).reconcile();
+
+    expect(notify).toHaveBeenCalledWith(stored, "success", null);
+  });
 });

@@ -1,17 +1,17 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from "fastify";
 import type {
   JobMode,
   RemotePath,
   Run,
   TransferFilters,
   TransferOptions,
-} from '@cloudbridge/shared';
-import { DEFAULT_TRANSFER_OPTIONS } from '@cloudbridge/shared';
-import { badRequest, conflict, notFound } from '../lib/errors.js';
-import { sanitizeName, sanitizePath } from '../lib/path.js';
-import { buildConfig, buildFilter, syncEndpointFor } from '../rclone/options.js';
-import { fsPath, serverSideOptions, type BackendOptions } from '../rclone/fsstring.js';
-import { RcloneError, RcloneUnavailableError } from '../rclone/client.js';
+} from "@cloudbridge/shared";
+import { DEFAULT_TRANSFER_OPTIONS } from "@cloudbridge/shared";
+import { badRequest, conflict, notFound } from "../lib/errors.js";
+import { sanitizeName, sanitizePath } from "../lib/path.js";
+import { buildConfig, buildFilter, syncEndpointFor } from "../rclone/options.js";
+import { fsPath, serverSideOptions, type BackendOptions } from "../rclone/fsstring.js";
+import { RcloneError, RcloneUnavailableError } from "../rclone/client.js";
 
 export interface SelectedItem {
   name: string;
@@ -58,7 +58,10 @@ export class TransferService {
    * Turn a selection into rclone filter rules, so a multi-file drag becomes a
    * single rclone job instead of one job per file.
    */
-  private selectionFilter(items: SelectedItem[], filters: TransferFilters): Record<string, unknown> {
+  private selectionFilter(
+    items: SelectedItem[],
+    filters: TransferFilters,
+  ): Record<string, unknown> {
     const include = [...filters.include];
     for (const item of items) {
       const name = sanitizeName(item.name);
@@ -83,7 +86,7 @@ export class TransferService {
 
   /** Does this operation delete data at the destination? */
   static isDestructive(mode: JobMode, options: Partial<TransferOptions>): boolean {
-    return mode === 'sync' && Boolean(options.deleteOnDst) && !options.dryRun;
+    return mode === "sync" && Boolean(options.deleteOnDst) && !options.dryRun;
   }
 
   async start(request: TransferRequest): Promise<Run> {
@@ -97,7 +100,7 @@ export class TransferService {
     };
     const items = request.items ?? [];
 
-    if (request.destinations.length === 0) throw badRequest('Falta el destino');
+    if (request.destinations.length === 0) throw badRequest("Falta el destino");
 
     if (TransferService.isDestructive(request.mode, options)) {
       const expected = request.jobName ?? this.describe(request.destinations);
@@ -133,13 +136,20 @@ export class TransferService {
       // rclone's limiter is process-wide, so the limit is held for this run and
       // released when it finishes.
       await this.app.bandwidth.acquire(run.id, options.bwlimit ?? null);
-      const jobIds = await this.issue(run.group, request.mode, request.source, request.destinations, items, options);
+      const jobIds = await this.issue(
+        run.group,
+        request.mode,
+        request.source,
+        request.destinations,
+        items,
+        options,
+      );
       this.app.runs.attachJobIds(run.id, jobIds);
       this.app.logs.write(
-        'info',
-        'transfer',
-        `${options.dryRun ? '[dry-run] ' : ''}${label}`,
-        { jobIds, files: items.length || 'todo el directorio' },
+        "info",
+        "transfer",
+        `${options.dryRun ? "[dry-run] " : ""}${label}`,
+        { jobIds, files: items.length || "todo el directorio" },
         { runId: run.id, jobId: request.jobId ?? null },
       );
       return { ...run, rcloneJobIds: jobIds };
@@ -148,17 +158,23 @@ export class TransferService {
       const message =
         error instanceof RcloneError || error instanceof RcloneUnavailableError
           ? error.message
-          : 'No se pudo lanzar la operación en rclone';
+          : "No se pudo lanzar la operación en rclone";
       this.app.runs.update(run.id, {
-        status: 'error',
+        status: "error",
         finishedAt: new Date().toISOString(),
         errorMessage: message,
         errors: 1,
       });
-      this.app.logs.write('error', 'transfer', `Fallo al lanzar: ${label}`, { error: message }, {
-        runId: run.id,
-        jobId: request.jobId ?? null,
-      });
+      this.app.logs.write(
+        "error",
+        "transfer",
+        `Fallo al lanzar: ${label}`,
+        { error: message },
+        {
+          runId: run.id,
+          jobId: request.jobId ?? null,
+        },
+      );
       throw error;
     }
   }
@@ -194,7 +210,7 @@ export class TransferService {
     // server-side attempt 404s "File not found", fall back to a plain
     // (non-server-side) copy/move of just that file instead of giving up.
     const onlyFiles = items.length > 0 && items.every((item) => !item.isDir);
-    if (onlyFiles && (mode === 'copy' || mode === 'move')) {
+    if (onlyFiles && (mode === "copy" || mode === "move")) {
       for (const destination of destinations) {
         const backends = await this.backendOptions(source, destination);
         const candidates = [
@@ -248,12 +264,14 @@ export class TransferService {
       const srcFs = fsPath(source.remote, source.path);
       const dstFs = fsPath(destination.remote, destination.path);
       const filter =
-        items.length > 0 ? this.selectionFilter(items, options.filters) : buildFilter(options.filters);
+        items.length > 0
+          ? this.selectionFilter(items, options.filters)
+          : buildFilter(options.filters);
 
       const endpoint = syncEndpointFor(mode, options.deleteOnDst);
       const call = { group, config, filter } as const;
 
-      if (endpoint === 'sync/bisync') {
+      if (endpoint === "sync/bisync") {
         jobIds.push(
           await this.rclone.bisync(srcFs, dstFs, { ...call, dryRun: options.dryRun }),
         );
@@ -261,9 +279,11 @@ export class TransferService {
       }
 
       const createEmptySrcDirs = options.createEmptySrcDirs;
-      if (endpoint === 'sync/copy') {
-        jobIds.push(await this.rclone.syncCopy(srcFs, dstFs, { ...call, createEmptySrcDirs }));
-      } else if (endpoint === 'sync/move') {
+      if (endpoint === "sync/copy") {
+        jobIds.push(
+          await this.rclone.syncCopy(srcFs, dstFs, { ...call, createEmptySrcDirs }),
+        );
+      } else if (endpoint === "sync/move") {
         jobIds.push(
           await this.rclone.syncMove(srcFs, dstFs, {
             ...call,
@@ -272,7 +292,9 @@ export class TransferService {
           }),
         );
       } else {
-        jobIds.push(await this.rclone.syncSync(srcFs, dstFs, { ...call, createEmptySrcDirs }));
+        jobIds.push(
+          await this.rclone.syncSync(srcFs, dstFs, { ...call, createEmptySrcDirs }),
+        );
       }
     }
 
@@ -288,13 +310,13 @@ export class TransferService {
    * immediately.
    */
   private async copyOrMoveFileWithRetry(
-    mode: 'copy' | 'move',
+    mode: "copy" | "move",
     candidates: Array<{ srcFs: string; dstFs: string }>,
     srcRemote: string,
     dstRemote: string,
     call: { group: string; config: Record<string, unknown> },
   ): Promise<{ jobid: number; error?: RcloneError | RcloneUnavailableError }> {
-    const endpoint = mode === 'move' ? 'operations/movefile' : 'operations/copyfile';
+    const endpoint = mode === "move" ? "operations/movefile" : "operations/copyfile";
     const attemptsPerCandidate = candidates.length > 1 ? 1 : 3;
     let jobid = -1;
     let lastError: RcloneError | RcloneUnavailableError | undefined;
@@ -314,7 +336,9 @@ export class TransferService {
           // reaches Drive, or its own generic wrapper ("object not found")
           // when it gives up resolving the object before that. Both need the
           // same fallback/retry treatment.
-          const notFound = error instanceof RcloneError && /(file|object) not found/i.test(error.message);
+          const notFound =
+            error instanceof RcloneError &&
+            /(file|object) not found/i.test(error.message);
           if (!notFound) return { jobid, error: lastError };
           if (attempt < attemptsPerCandidate) {
             await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
@@ -329,13 +353,19 @@ export class TransferService {
   private async waitForJob(jobid: number, endpoint: string): Promise<void> {
     const deadline = Date.now() + 5 * 60_000;
     while (Date.now() < deadline) {
-      const status = await this.rclone.call<{ finished: boolean; success: boolean; error: string }>(
-        'job/status',
-        { jobid },
-        { timeoutMs: 10_000 },
-      );
+      const status = await this.rclone.call<{
+        finished: boolean;
+        success: boolean;
+        error: string;
+      }>("job/status", { jobid }, { timeoutMs: 10_000 });
       if (status.finished) {
-        if (!status.success) throw new RcloneError(endpoint, 200, status.error || `${endpoint} falló`, status);
+        if (!status.success)
+          throw new RcloneError(
+            endpoint,
+            200,
+            status.error || `${endpoint} falló`,
+            status,
+          );
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -346,13 +376,13 @@ export class TransferService {
   private describe(destinations: RemotePath[]): string {
     return destinations
       .map((destination) => `${destination.remote}:${sanitizePath(destination.path)}`)
-      .join(', ');
+      .join(", ");
   }
 
   /** Cancel a run: stop every rclone job in its group. */
-  async stop(runId: string, status: 'cancelled' | 'paused' = 'cancelled'): Promise<Run> {
+  async stop(runId: string, status: "cancelled" | "paused" = "cancelled"): Promise<Run> {
     const run = this.app.runs.get(runId);
-    if (run.status !== 'running') {
+    if (run.status !== "running") {
       throw conflict(`La ejecución no está en curso (estado: ${run.status})`);
     }
 
@@ -360,7 +390,10 @@ export class TransferService {
       await this.rclone.jobStopGroup(run.group);
     } catch (error) {
       // Fall back to stopping the individual jobs.
-      this.app.log.warn({ err: error, runId }, 'job/stopgroup falló, se paran los jobs uno a uno');
+      this.app.log.warn(
+        { err: error, runId },
+        "job/stopgroup falló, se paran los jobs uno a uno",
+      );
       for (const jobId of run.rcloneJobIds) {
         await this.rclone.jobStop(jobId).catch(() => undefined);
       }
@@ -370,15 +403,15 @@ export class TransferService {
     const stats = await this.rclone.stats(run.group).catch(() => null);
     this.app.runs.update(runId, {
       status,
-      finishedAt: status === 'cancelled' ? new Date().toISOString() : null,
+      finishedAt: status === "cancelled" ? new Date().toISOString() : null,
       files: stats?.transfers ?? run.files,
       bytes: stats?.bytes ?? run.bytes,
     });
 
     this.app.logs.write(
-      'warn',
-      'transfer',
-      status === 'paused' ? `Pausada: ${run.label}` : `Cancelada: ${run.label}`,
+      "warn",
+      "transfer",
+      status === "paused" ? `Pausada: ${run.label}` : `Cancelada: ${run.label}`,
       undefined,
       { runId, jobId: run.jobId },
     );
@@ -394,17 +427,24 @@ export class TransferService {
    * See https://forum.rclone.org/t/how-to-resume-copy-process/14890/3
    */
   pause(runId: string): Promise<Run> {
-    return this.stop(runId, 'paused');
+    return this.stop(runId, "paused");
   }
 
   async resume(runId: string): Promise<Run> {
     const run = this.app.runs.get(runId);
-    if (run.status !== 'paused' && run.status !== 'interrupted' && run.status !== 'error') {
-      throw conflict(`Solo se pueden reanudar ejecuciones pausadas, interrumpidas o con error`);
+    if (
+      run.status !== "paused" &&
+      run.status !== "interrupted" &&
+      run.status !== "error"
+    ) {
+      throw conflict(
+        `Solo se pueden reanudar ejecuciones pausadas, interrumpidas o con error`,
+      );
     }
 
     const params = this.app.runs.params(runId) as RunParams | null;
-    if (!params) throw badRequest('Esta ejecución no guardó parámetros y no se puede reanudar');
+    if (!params)
+      throw badRequest("Esta ejecución no guardó parámetros y no se puede reanudar");
 
     return this.start({
       mode: params.mode,
@@ -425,7 +465,7 @@ export class TransferService {
    * Called on a timer by the stats broadcaster.
    */
   async reconcile(): Promise<void> {
-    const active = this.app.runs.active().filter((run) => run.status === 'running');
+    const active = this.app.runs.active().filter((run) => run.status === "running");
     if (active.length === 0) return;
 
     for (const run of active) {
@@ -439,20 +479,24 @@ export class TransferService {
 
         const stats = await this.rclone.stats(run.group).catch(() => null);
         const failed = statuses.filter((status) => !status.success);
-        const errorMessage = failed.map((status) => status.error).filter(Boolean).join('; ') || null;
+        const errorMessage =
+          failed
+            .map((status) => status.error)
+            .filter(Boolean)
+            .join("; ") || null;
 
         let dryRunReport: string | null = null;
         if (run.dryRun) {
           const transferred = await this.rclone.transferred(run.group).catch(() => []);
           dryRunReport =
             transferred.length > 0
-              ? transferred.map((item) => `${item.name} (${item.size} B)`).join('\n')
-              : 'El dry-run no encontró nada que transferir.';
+              ? transferred.map((item) => `${item.name} (${item.size} B)`).join("\n")
+              : "El dry-run no encontró nada que transferir.";
         }
 
         await this.app.bandwidth.release(run.id);
         this.app.runs.update(run.id, {
-          status: failed.length > 0 ? 'error' : 'success',
+          status: failed.length > 0 ? "error" : "success",
           finishedAt: new Date().toISOString(),
           files: stats?.transfers ?? 0,
           bytes: stats?.bytes ?? 0,
@@ -462,9 +506,9 @@ export class TransferService {
         });
 
         this.app.logs.write(
-          failed.length > 0 ? 'error' : 'info',
-          'transfer',
-          `${failed.length > 0 ? 'Fallida' : 'Completada'}: ${run.label}`,
+          failed.length > 0 ? "error" : "info",
+          "transfer",
+          `${failed.length > 0 ? "Fallida" : "Completada"}: ${run.label}`,
           { files: stats?.transfers ?? 0, bytes: stats?.bytes ?? 0, error: errorMessage },
           { runId: run.id, jobId: run.jobId },
         );
@@ -472,24 +516,17 @@ export class TransferService {
         const finished = this.app.runs.get(run.id);
         this.app.stats?.emitRunFinished(finished);
 
-        if (finished.jobId) {
-          const job = (() => {
-            try {
-              return this.app.jobs.get(finished.jobId!);
-            } catch {
-              return null;
-            }
-          })();
-          void this.app.notifications.send(
-            job,
-            finished,
-            failed.length > 0 ? 'error' : 'success',
-            errorMessage,
-          );
-        }
+        void this.app.notifications.send(
+          finished,
+          failed.length > 0 ? "error" : "success",
+          errorMessage,
+        );
       } catch (error) {
         if (error instanceof RcloneUnavailableError) return; // Retry on the next tick.
-        this.app.log.warn({ err: error, runId: run.id }, 'No se pudo reconciliar la ejecución');
+        this.app.log.warn(
+          { err: error, runId: run.id },
+          "No se pudo reconciliar la ejecución",
+        );
       }
     }
   }

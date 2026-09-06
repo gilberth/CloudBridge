@@ -1,91 +1,87 @@
-import type { FastifyInstance } from 'fastify';
-import type { Job, Run } from '@cloudbridge/shared';
-import { humanBytes, humanDuration } from '../lib/format.js';
+import type { FastifyInstance } from "fastify";
+import type { Job, Run } from "@cloudbridge/shared";
+import { humanBytes, humanDuration } from "../lib/format.js";
+import { createNotificationAdapter } from "./notification-adapters.js";
+import type {
+  NotificationAdapter,
+  NotificationEvent,
+  NotificationFailedFile,
+} from "./notification-types.js";
+import type { ResolvedNotificationChannel } from "./settings.js";
 
-export type NotificationOutcome = 'success' | 'error';
+export type NotificationOutcome = "success" | "error";
+export type NotificationAdapterFactory = (
+  channel: ResolvedNotificationChannel,
+) => NotificationAdapter;
 
-/**
- * Webhook notifications when a job finishes. The payload is a JSON template
- * from Settings with `{{placeholders}}`; without a template a default JSON
- * body is posted.
- */
+/** Delivers one transfer event to every matching global notification channel. */
 export class NotificationService {
-  constructor(private readonly app: FastifyInstance) {}
+  constructor(
+    private readonly app: FastifyInstance,
+    private readonly adapterFactory: NotificationAdapterFactory = createNotificationAdapter,
+  ) {}
 
-  private variables(job: Job | null, run: Run | null, outcome: NotificationOutcome, error: string | null) {
+  private event(
+    run: Run | null,
+    outcome: NotificationOutcome,
+    error: string | null,
+    failedFiles: NotificationFailedFile[],
+    job: Job | null,
+  ): NotificationEvent {
+    const now = new Date().toISOString();
+    const source = run?.source ?? job?.source ?? null;
+    const destinations = run?.destinations ?? job?.destinations ?? [];
     return {
-      job: job?.name ?? run?.jobName ?? 'CloudBridge',
-      jobId: job?.id ?? run?.jobId ?? '',
-      status: outcome,
-      mode: run?.mode ?? job?.mode ?? '',
-      files: String(run?.files ?? 0),
-      bytes: String(run?.bytes ?? 0),
+      outcome,
+      job: run?.jobName ?? job?.name ?? run?.label ?? "CloudBridge",
+      mode: run?.mode ?? job?.mode ?? "copy",
+      source: source ? `${source.remote}:${source.path}` : "",
+      destinations: destinations.map((item) => `${item.remote}:${item.path}`),
+      files: run?.files ?? 0,
+      bytes: run?.bytes ?? 0,
       bytesHuman: humanBytes(run?.bytes ?? 0),
-      duration: run?.durationMs != null ? humanDuration(run.durationMs) : '',
-      errors: String(run?.errors ?? 0),
-      error: error ?? run?.errorMessage ?? '',
-      runId: run?.id ?? '',
-      startedAt: run?.startedAt ?? new Date().toISOString(),
-      finishedAt: run?.finishedAt ?? new Date().toISOString(),
-      source: run?.source ? `${run.source.remote}:${run.source.path}` : '',
-      destinations: (run?.destinations ?? [])
-        .map((destination) => `${destination.remote}:${destination.path}`)
-        .join(', '),
+      duration: run?.durationMs != null ? humanDuration(run.durationMs) : "",
+      error: error ?? run?.errorMessage ?? null,
+      startedAt: run?.startedAt ?? now,
+      finishedAt: run?.finishedAt ?? now,
+      runId: run?.id ?? "",
+      failedFiles,
     };
   }
 
-  private render(template: string, variables: Record<string, string>): string {
-    return template.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => {
-      const value = variables[key] ?? '';
-      // Escape so the rendered value stays valid inside a JSON string.
-      return JSON.stringify(value).slice(1, -1);
-    });
-  }
-
   async send(
-    job: Job | null,
     run: Run | null,
     outcome: NotificationOutcome,
     error: string | null = null,
+    failedFiles: NotificationFailedFile[] = [],
+    job: Job | null = null,
   ): Promise<void> {
-    const settings = this.app.settings.get();
-    const url = job?.webhookUrl ?? settings.webhookUrl;
-    if (!url) return;
-
-    if (job) {
-      if (outcome === 'success' && !job.notifyOnSuccess) return;
-      if (outcome === 'error' && !job.notifyOnFailure) return;
-    }
-
-    const variables = this.variables(job, run, outcome, error);
-    const body = settings.webhookTemplate
-      ? this.render(settings.webhookTemplate, variables)
-      : JSON.stringify(variables);
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body,
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) {
-        this.app.logs.write(
-          'warn',
-          'webhook',
-          `El webhook respondió ${response.status}`,
-          { url },
-          { jobId: job?.id ?? null, runId: run?.id ?? null },
-        );
-      }
-    } catch (cause) {
-      this.app.logs.write(
-        'warn',
-        'webhook',
-        `No se pudo entregar el webhook: ${cause instanceof Error ? cause.message : String(cause)}`,
-        { url },
-        { jobId: job?.id ?? null, runId: run?.id ?? null },
+    const channels = this.app.settings
+      .notificationChannels()
+      .filter(
+        (channel) =>
+          channel.enabled &&
+          (outcome === "success" ? channel.notifyOnSuccess : channel.notifyOnFailure),
       );
-    }
+    if (channels.length === 0) return;
+
+    const event = this.event(run, outcome, error, failedFiles, job);
+    const results = await Promise.allSettled(
+      channels.map((channel) => this.adapterFactory(channel).send(event)),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") return;
+      const channel = channels[index]!;
+      this.app.logs.write(
+        "warn",
+        "notification",
+        result.reason instanceof Error
+          ? result.reason.message
+          : `No se pudo entregar en ${channel.name}`,
+        { channelId: channel.id, provider: channel.provider },
+        { jobId: run?.jobId ?? job?.id ?? null, runId: run?.id ?? null },
+      );
+    });
   }
 }
