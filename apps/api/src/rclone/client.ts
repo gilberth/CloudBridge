@@ -410,7 +410,9 @@ export class RcloneClient {
     dstFs: string,
     params: { download?: boolean; oneWay?: boolean; checkFileHash?: string } = {},
   ): Promise<RcCheckResult> {
-    return this.call<RcCheckResult>(
+    // Hash checks can traverse millions of remote objects. Run the RC call as
+    // a job and poll it, otherwise one HTTP request is cut off after 5 min.
+    return this.callAsyncAndWait<RcCheckResult>(
       'operations/check',
       {
         srcFs,
@@ -423,7 +425,7 @@ export class RcloneClient {
         error: true,
         ...params,
       },
-      { timeoutMs: 300_000 },
+      { maxWaitMs: 60 * 60_000 },
     );
   }
 
