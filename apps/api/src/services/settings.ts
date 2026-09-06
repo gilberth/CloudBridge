@@ -196,7 +196,11 @@ export class SettingsService {
     const previousNotifications = new Map(
       (this.readNotifications() ?? []).map((channel) => [channel.id, channel] as const),
     );
-    if (patch.notifications && previousNotifications.size === 0 && current.webhookUrl) {
+    if (
+      patch.notifications !== undefined &&
+      previousNotifications.size === 0 &&
+      current.webhookUrl
+    ) {
       previousNotifications.set(
         "webhook-legacy",
         this.storeResolvedChannel({
@@ -267,6 +271,13 @@ export class SettingsService {
       return legacy ? [legacy] : [];
     }
     return stored.map((channel) => this.resolveChannel(channel));
+  }
+
+  previewNotificationChannel(
+    input: NotificationChannelInput,
+  ): ResolvedNotificationChannel {
+    const stored = this.readNotifications()?.find((channel) => channel.id === input.id);
+    return this.resolveChannel(this.storeInputChannel(input, stored));
   }
 
   private publicNotificationChannels(): AppSettings["notifications"] {

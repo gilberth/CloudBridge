@@ -33,6 +33,7 @@ async function deliver(
       throw cause;
     throw new Error(
       `No se pudo entregar en ${LABELS[channel.provider]} "${channel.name}"`,
+      { cause },
     );
   }
 }

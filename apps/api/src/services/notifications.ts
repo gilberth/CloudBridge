@@ -84,4 +84,8 @@ export class NotificationService {
       );
     });
   }
+
+  async test(channel: ResolvedNotificationChannel): Promise<void> {
+    await this.adapterFactory(channel).send(this.event(null, "success", null, [], null));
+  }
 }

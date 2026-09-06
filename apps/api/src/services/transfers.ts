@@ -8,7 +8,7 @@ import type {
 } from "@cloudbridge/shared";
 import { DEFAULT_TRANSFER_OPTIONS } from "@cloudbridge/shared";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
-import { sanitizeName, sanitizePath } from "../lib/path.js";
+import { sanitizePath } from "../lib/path.js";
 import { buildConfig, buildFilter, syncEndpointFor } from "../rclone/options.js";
 import { fsPath, serverSideOptions, type BackendOptions } from "../rclone/fsstring.js";
 import { RcloneError, RcloneUnavailableError } from "../rclone/client.js";
@@ -28,6 +28,8 @@ export interface TransferRequest {
   label?: string;
   jobId?: string | null;
   jobName?: string | null;
+  /** Original execution when this is a safe, targeted retry. */
+  retryOfRunId?: string | null;
   /** Required when the operation deletes at the destination. */
   confirm?: string;
 }
@@ -64,10 +66,17 @@ export class TransferService {
   ): Record<string, unknown> {
     const include = [...filters.include];
     for (const item of items) {
-      const name = sanitizeName(item.name);
+      const name = this.safeItemPath(item.name);
       include.push(item.isDir ? `/${name}/**` : `/${name}`);
     }
     return buildFilter({ include, exclude: filters.exclude });
+  }
+
+  private safeItemPath(name: string): string {
+    const clean = sanitizePath(name);
+    if (!clean || clean.startsWith("/"))
+      throw badRequest("La ruta del archivo es inválida");
+    return clean;
   }
 
   private async backendOptions(
@@ -130,6 +139,7 @@ export class TransferService {
         items,
         options,
       } satisfies RunParams,
+      retryOfRunId: request.retryOfRunId ?? null,
     });
 
     try {
@@ -177,6 +187,38 @@ export class TransferService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Re-issue selected failures as copy operations. This is deliberately never
+   * a move/sync/bisync, so retrying cannot delete data at either end.
+   */
+  async retryFailures(id: string, failureIds?: string[]): Promise<Run> {
+    const run = this.app.runs.get(id);
+    if (!run.source || run.destinations.length === 0) {
+      throw badRequest("La ejecución no conserva un origen y destino para reintentar");
+    }
+    const selected = run.failedFiles.filter(
+      (failure) => !failureIds || failureIds.includes(failure.id),
+    );
+    if (selected.length === 0)
+      throw badRequest("No hay archivos fallidos para reintentar");
+
+    const previous = this.app.runs.params(id) as Partial<RunParams> | null;
+    const items = selected.map((failure) => ({
+      name: this.safeItemPath(failure.name),
+      isDir: false,
+    }));
+
+    return this.start({
+      mode: "copy",
+      source: run.source,
+      destinations: run.destinations,
+      items,
+      options: { ...(previous?.options ?? {}), deleteOnDst: false, dryRun: false },
+      label: `Reintento de ${selected.length} archivo${selected.length === 1 ? "" : "s"}: ${run.label}`,
+      retryOfRunId: run.id,
+    });
   }
 
   /** Issue one rclone job per destination and return their ids. */
@@ -236,8 +278,8 @@ export class TransferService {
           // must be just the leaf name — joining the parent path in *again*
           // duplicates it (`.../01 - Intro/01 - Intro/file`) and rclone
           // reports that nonexistent nested path as "object not found".
-          const srcRemote = sanitizeName(item.name);
-          const dstRemote = sanitizeName(item.name);
+          const srcRemote = this.safeItemPath(item.name);
+          const dstRemote = this.safeItemPath(item.name);
           const { jobid, error } = await this.copyOrMoveFileWithRetry(
             mode,
             candidates,
@@ -475,6 +517,18 @@ export class TransferService {
         const statuses = await Promise.all(
           run.rcloneJobIds.map((jobId) => this.rclone.jobStatus(jobId)),
         );
+        const transferred = await this.rclone.transferred(run.group).catch(() => []);
+        const failedFiles = transferred
+          .filter((item) => item.error)
+          .map((item) => ({
+            name: item.name,
+            error: item.error,
+            bytes: item.bytes,
+            size: item.size,
+          }));
+        if (failedFiles.length > 0) this.app.runs.recordFailures(run.id, failedFiles);
+        // rclone only retains a bounded history in core/transferred, so record
+        // failures on every poll instead of waiting for a large run to finish.
         if (!statuses.every((status) => status.finished)) continue;
 
         const stats = await this.rclone.stats(run.group).catch(() => null);
@@ -487,7 +541,6 @@ export class TransferService {
 
         let dryRunReport: string | null = null;
         if (run.dryRun) {
-          const transferred = await this.rclone.transferred(run.group).catch(() => []);
           dryRunReport =
             transferred.length > 0
               ? transferred.map((item) => `${item.name} (${item.size} B)`).join("\n")
@@ -520,6 +573,7 @@ export class TransferService {
           finished,
           failed.length > 0 ? "error" : "success",
           errorMessage,
+          finished.failedFiles,
         );
       } catch (error) {
         if (error instanceof RcloneUnavailableError) return; // Retry on the next tick.

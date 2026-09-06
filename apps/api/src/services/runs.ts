@@ -1,10 +1,16 @@
-import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, lt, notInArray } from 'drizzle-orm';
-import type { JobMode, RemotePath, Run, RunStatus } from '@cloudbridge/shared';
-import type { Db } from '../db/index.js';
-import { runs } from '../db/schema.js';
-import type { RunRow } from '../db/schema.js';
-import { notFound } from '../lib/errors.js';
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, inArray, lt, notInArray } from "drizzle-orm";
+import type {
+  FailedTransferFile,
+  JobMode,
+  RemotePath,
+  Run,
+  RunStatus,
+} from "@cloudbridge/shared";
+import type { Db } from "../db/index.js";
+import { runs } from "../db/schema.js";
+import type { RunRow } from "../db/schema.js";
+import { notFound } from "../lib/errors.js";
 
 export interface CreateRunInput {
   jobId?: string | null;
@@ -16,9 +22,10 @@ export interface CreateRunInput {
   destinations: RemotePath[];
   /** Everything needed to re-issue the operation on resume. */
   params: unknown;
+  retryOfRunId?: string | null;
 }
 
-const ACTIVE: RunStatus[] = ['running', 'paused'];
+const ACTIVE: RunStatus[] = ["running", "paused"];
 
 /** Persistence for executions: ad-hoc Explorer operations and job runs alike. */
 export class RunsService {
@@ -32,7 +39,7 @@ export class RunsService {
       jobName: input.jobName ?? null,
       label: input.label,
       mode: input.mode,
-      status: 'running' as const,
+      status: "running" as const,
       dryRun: input.dryRun,
       group: `run:${id}`,
       rcloneJobIds: [] as number[],
@@ -40,10 +47,20 @@ export class RunsService {
       sourcePath: input.source?.path ?? null,
       destinations: input.destinations,
       params: input.params ?? null,
+      retryOfRunId: input.retryOfRunId ?? null,
       startedAt: new Date().toISOString(),
     };
     this.db.insert(runs).values(row).run();
-    return this.toRun({ ...row, finishedAt: null, files: 0, bytes: 0, errors: 0, errorMessage: null, dryRunReport: null } as RunRow);
+    return this.toRun({
+      ...row,
+      finishedAt: null,
+      files: 0,
+      bytes: 0,
+      errors: 0,
+      errorMessage: null,
+      failedFiles: [],
+      dryRunReport: null,
+    } as RunRow);
   }
 
   attachJobIds(id: string, jobIds: number[]): void {
@@ -60,15 +77,28 @@ export class RunsService {
       errors: number;
       errorMessage: string | null;
       dryRunReport: string | null;
+      failedFiles: FailedTransferFile[];
       rcloneJobIds: number[];
     }>,
   ): void {
     this.db.update(runs).set(patch).where(eq(runs.id, id)).run();
   }
 
+  recordFailures(id: string, failedFiles: Omit<FailedTransferFile, "id">[]): void {
+    const existing = this.find(id)?.failedFiles ?? [];
+    const byKey = new Map(
+      existing.map((item) => [`${item.name}\u0000${item.error}`, item]),
+    );
+    for (const item of failedFiles) {
+      const key = `${item.name}\u0000${item.error}`;
+      if (!byKey.has(key)) byKey.set(key, { id: randomUUID(), ...item });
+    }
+    this.update(id, { failedFiles: [...byKey.values()].slice(-500) });
+  }
+
   get(id: string): Run {
     const row = this.db.select().from(runs).where(eq(runs.id, id)).get();
-    if (!row) throw notFound('Ejecución no encontrada');
+    if (!row) throw notFound("Ejecución no encontrada");
     return this.toRun(row);
   }
 
@@ -118,9 +148,9 @@ export class RunsService {
     const result = this.db
       .update(runs)
       .set({
-        status: 'interrupted',
+        status: "interrupted",
         finishedAt: new Date().toISOString(),
-        errorMessage: 'Interrumpida por un reinicio de CloudBridge',
+        errorMessage: "Interrumpida por un reinicio de CloudBridge",
       })
       .where(inArray(runs.status, ACTIVE))
       .run();
@@ -149,7 +179,9 @@ export class RunsService {
       dryRun: row.dryRun,
       group: row.group,
       rcloneJobIds: (row.rcloneJobIds as number[]) ?? [],
-      source: row.sourceRemote ? { remote: row.sourceRemote, path: row.sourcePath ?? '' } : null,
+      source: row.sourceRemote
+        ? { remote: row.sourceRemote, path: row.sourcePath ?? "" }
+        : null,
       destinations: (row.destinations as RemotePath[]) ?? [],
       startedAt: row.startedAt,
       finishedAt,
@@ -160,12 +192,17 @@ export class RunsService {
       bytes: row.bytes,
       errors: row.errors,
       errorMessage: row.errorMessage,
+      failedFiles: (row.failedFiles as FailedTransferFile[]) ?? [],
+      retryOfRunId: row.retryOfRunId,
       dryRunReport: row.dryRunReport,
     };
   }
 
   /** Raw row access for services that need `params`. */
   params(id: string): unknown {
-    return this.db.select({ params: runs.params }).from(runs).where(eq(runs.id, id)).get()?.params ?? null;
+    return (
+      this.db.select({ params: runs.params }).from(runs).where(eq(runs.id, id)).get()
+        ?.params ?? null
+    );
   }
 }

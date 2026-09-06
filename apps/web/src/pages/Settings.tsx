@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Clock3,
+  Bell,
   Download,
   FileCog,
   LoaderCircle,
@@ -11,44 +12,53 @@ import {
   Trash2,
   Upload,
   Users,
-  Webhook,
   type LucideIcon,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import type { SessionUser } from '@cloudbridge/shared';
-import { ApiError, api } from '@/lib/api';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input, Textarea } from '@/components/ui/input';
-import { FieldHelp } from '@/components/ui/field-help';
-import { Label } from '@/components/ui/label';
+} from "lucide-react";
+import { toast } from "sonner";
+import type { SessionUser } from "@cloudbridge/shared";
+import { ApiError, api } from "@/lib/api";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { FieldHelp } from "@/components/ui/field-help";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ConfirmDialog } from '@/components/confirm-dialog';
-import { useAuth } from '@/hooks/useAuth';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useAuth } from "@/hooks/useAuth";
+import { cn } from "@/lib/utils";
+import {
+  NotificationChannels,
+  notificationChannelDraft,
+} from "@/components/settings/NotificationChannels";
+import type { NotificationChannelInput } from "@cloudbridge/shared";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings.get });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings.get });
 
   const [form, setForm] =
     useState<
       ReturnType<typeof api.settings.get> extends Promise<infer T> ? T | null : never
     >(null);
   useEffect(() => {
-    if (settings.data) setForm(settings.data);
+    if (settings.data) {
+      setForm(settings.data);
+      setNotifications(settings.data.notifications.map(notificationChannelDraft));
+    }
   }, [settings.data]);
 
-  const [rclonePassword, setRclonePassword] = useState('');
+  const [notifications, setNotifications] = useState<NotificationChannelInput[]>([]);
+
+  const [rclonePassword, setRclonePassword] = useState("");
   const [testResult, setTestResult] = useState<{
     online: boolean;
     error: string | null;
@@ -70,7 +80,7 @@ export default function SettingsPage() {
 
   const save = useMutation({
     mutationFn: () => {
-      if (!form) throw new Error('unreachable');
+      if (!form) throw new Error("unreachable");
       return api.settings.update({
         rclone: {
           url: form.rclone.url,
@@ -79,27 +89,35 @@ export default function SettingsPage() {
         },
         defaults: form.defaults,
         historyRetentionDays: form.historyRetentionDays,
-        webhookUrl: form.webhookUrl,
-        webhookTemplate: form.webhookTemplate,
+        notifications,
         timezone: form.timezone,
         accentColor: form.accentColor,
       });
     },
     onSuccess: (updated) => {
       setForm(updated);
-      setRclonePassword('');
-      queryClient.setQueryData(['settings'], updated);
-      document.documentElement.style.setProperty('--accent-hue', updated.accentColor);
-      toast.success('Ajustes guardados');
+      setRclonePassword("");
+      queryClient.setQueryData(["settings"], updated);
+      document.documentElement.style.setProperty("--accent-hue", updated.accentColor);
+      toast.success("Ajustes guardados");
     },
     onError: (error) =>
-      toast.error('No se pudieron guardar los ajustes', {
+      toast.error("No se pudieron guardar los ajustes", {
+        description: error instanceof ApiError ? error.message : String(error),
+      }),
+  });
+
+  const testNotification = useMutation({
+    mutationFn: api.settings.testNotification,
+    onSuccess: () => toast.success("Notificación de prueba enviada"),
+    onError: (error) =>
+      toast.error("No se pudo enviar la prueba", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });
 
   const timezones = useQuery({
-    queryKey: ['timezones'],
+    queryKey: ["timezones"],
     queryFn: api.settings.timezones,
     staleTime: Infinity,
   });
@@ -163,12 +181,12 @@ export default function SettingsPage() {
                 />
               </Field>
               <Field
-                label={`Contraseña ${form.rclone.passwordSet ? '(configurada)' : ''}`}
+                label={`Contraseña ${form.rclone.passwordSet ? "(configurada)" : ""}`}
                 help="Credencial de la RC API. Déjala vacía para conservar la contraseña configurada."
               >
                 <Input
                   type="password"
-                  placeholder={form.rclone.passwordSet ? '••••••••' : ''}
+                  placeholder={form.rclone.passwordSet ? "••••••••" : ""}
                   value={rclonePassword}
                   onChange={(event) => setRclonePassword(event.target.value)}
                 />
@@ -189,8 +207,8 @@ export default function SettingsPage() {
                 Probar conexión
               </Button>
               {testResult && (
-                <Badge variant={testResult.online ? 'success' : 'danger'}>
-                  {testResult.online ? 'conectado' : (testResult.error ?? 'error')}
+                <Badge variant={testResult.online ? "success" : "danger"}>
+                  {testResult.online ? "conectado" : (testResult.error ?? "error")}
                 </Badge>
               )}
             </div>
@@ -246,7 +264,7 @@ export default function SettingsPage() {
               >
                 <Input
                   placeholder="p. ej. 10M"
-                  value={form.defaults.bwlimit ?? ''}
+                  value={form.defaults.bwlimit ?? ""}
                   onChange={(event) =>
                     setForm({
                       ...form,
@@ -275,7 +293,7 @@ export default function SettingsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(['debug', 'info', 'warn', 'error'] as const).map((level) => (
+                    {(["debug", "info", "warn", "error"] as const).map((level) => (
                       <SelectItem key={level} value={level}>
                         {level}
                       </SelectItem>
@@ -354,48 +372,16 @@ export default function SettingsPage() {
           </Section>
 
           <Section
-            title="Webhook global"
-            description="Envía una notificación HTTP cuando finaliza una tarea."
-            icon={Webhook}
+            title="Notificaciones"
+            description="Todos los canales activos reciben las transferencias que coincidan con sus reglas."
+            icon={Bell}
           >
-            <div className="grid gap-4 lg:grid-cols-12">
-              <Field
-                className="lg:col-span-5"
-                label="URL"
-                help="Endpoint HTTP que recibe una notificación al finalizar una tarea."
-              >
-                <Input
-                  placeholder="https://…"
-                  value={form.webhookUrl ?? ''}
-                  onChange={(event) =>
-                    setForm({ ...form, webhookUrl: event.target.value || null })
-                  }
-                />
-              </Field>
-              <Field
-                className="lg:col-span-7"
-                label="Plantilla del payload JSON (opcional)"
-                help="JSON enviado al webhook. Puedes insertar los placeholders mostrados debajo."
-              >
-                <Textarea
-                  className="mono"
-                  rows={2}
-                  placeholder='{"text":"{{job}} terminó: {{status}}"}'
-                  value={form.webhookTemplate ?? ''}
-                  onChange={(event) =>
-                    setForm({ ...form, webhookTemplate: event.target.value || null })
-                  }
-                />
-              </Field>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Placeholders:{' '}
-              <code className="mono">
-                {
-                  '{{job}} {{status}} {{mode}} {{files}} {{bytesHuman}} {{duration}} {{error}}'
-                }
-              </code>
-            </p>
+            <NotificationChannels
+              channels={notifications}
+              onChange={setNotifications}
+              onTest={(channel) => testNotification.mutate(channel)}
+              testing={testNotification.isPending}
+            />
           </Section>
 
           <Section
@@ -406,7 +392,7 @@ export default function SettingsPage() {
             <ConfigTransfer />
           </Section>
 
-          {user?.role === 'admin' && (
+          {user?.role === "admin" && (
             <Section
               title="Usuarios"
               description="Administra las cuentas que pueden acceder a CloudBridge."
@@ -463,7 +449,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn('grid min-w-0 content-start gap-1.5', className)}>
+    <div className={cn("grid min-w-0 content-start gap-1.5", className)}>
       <div className="flex min-h-5 items-center gap-1.5">
         <Label className="leading-4">{label}</Label>
         <FieldHelp label={label}>{help}</FieldHelp>
@@ -478,11 +464,11 @@ function ConfigTransfer() {
   const exportConfig = useMutation({
     mutationFn: api.remotes.exportConfig,
     onSuccess: ({ config }) => {
-      const blob = new Blob([config], { type: 'text/plain' });
+      const blob = new Blob([config], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
+      const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = 'rclone.conf';
+      anchor.download = "rclone.conf";
       anchor.click();
       URL.revokeObjectURL(url);
     },
@@ -490,11 +476,11 @@ function ConfigTransfer() {
   const importConfig = useMutation({
     mutationFn: (config: string) => api.remotes.importConfig(config),
     onSuccess: ({ imported }) => {
-      void queryClient.invalidateQueries({ queryKey: ['remotes'] });
+      void queryClient.invalidateQueries({ queryKey: ["remotes"] });
       toast.success(`${imported} remotos importados`);
     },
     onError: (error) =>
-      toast.error('No se pudo importar', {
+      toast.error("No se pudo importar", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });
@@ -509,9 +495,9 @@ function ConfigTransfer() {
         variant="outline"
         size="sm"
         onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.conf,.txt,text/plain';
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = ".conf,.txt,text/plain";
           input.onchange = async () => {
             const file = input.files?.[0];
             if (file) importConfig.mutate(await file.text());
@@ -529,21 +515,21 @@ function ConfigTransfer() {
 function UsersManager() {
   const queryClient = useQueryClient();
   const { user: me } = useAuth();
-  const users = useQuery({ queryKey: ['users'], queryFn: api.users.list });
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const users = useQuery({ queryKey: ["users"], queryFn: api.users.list });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [deleting, setDeleting] = useState<SessionUser | null>(null);
 
   const create = useMutation({
-    mutationFn: () => api.users.create({ username, password, role: 'user' }),
+    mutationFn: () => api.users.create({ username, password, role: "user" }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
-      setUsername('');
-      setPassword('');
-      toast.success('Usuario creado');
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
+      setUsername("");
+      setPassword("");
+      toast.success("Usuario creado");
     },
     onError: (error) =>
-      toast.error('No se pudo crear el usuario', {
+      toast.error("No se pudo crear el usuario", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });
@@ -551,11 +537,11 @@ function UsersManager() {
   const remove = useMutation({
     mutationFn: (id: string) => api.users.remove(id),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
       setDeleting(null);
     },
     onError: (error) =>
-      toast.error('No se pudo eliminar', {
+      toast.error("No se pudo eliminar", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });

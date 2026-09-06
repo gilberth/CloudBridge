@@ -1,5 +1,5 @@
-import type { JobMode, RunStatus } from './common.js';
-import type { RemotePath } from './fs.js';
+import type { JobMode, RunStatus } from "./common.js";
+import type { RemotePath } from "./fs.js";
 
 /** A single in-flight file, as reported by rclone `core/stats`. */
 export interface TransferItem {
@@ -70,8 +70,20 @@ export interface Run {
   bytes: number;
   errors: number;
   errorMessage: string | null;
+  /** Files reported as failed by rclone, retained for inspection and retry. */
+  failedFiles: FailedTransferFile[];
+  /** Original execution when this run is a targeted retry. */
+  retryOfRunId: string | null;
   /** Textual output of a `--dry-run` execution, when there is one. */
   dryRunReport: string | null;
+}
+
+export interface FailedTransferFile {
+  id: string;
+  name: string;
+  error: string;
+  bytes: number;
+  size: number;
 }
 
 export interface RunWithStats extends Run {
@@ -87,11 +99,11 @@ export interface RcloneHealth {
 
 export type WsServerMessage =
   | {
-      type: 'stats';
+      type: "stats";
       ts: string;
       health: RcloneHealth;
       global: StatsSnapshot;
       runs: RunWithStats[];
     }
-  | { type: 'run:finished'; ts: string; run: Run }
-  | { type: 'hello'; ts: string; interval: number };
+  | { type: "run:finished"; ts: string; run: Run }
+  | { type: "hello"; ts: string; interval: number };

@@ -23,6 +23,8 @@ function runningRun(): Run {
     bytes: 0,
     errors: 0,
     errorMessage: null,
+    failedFiles: [],
+    retryOfRunId: null,
     dryRunReport: null,
   };
 }
@@ -83,6 +85,7 @@ describe("TransferService", () => {
           error: "",
         }),
         stats: vi.fn().mockResolvedValue({ transfers: 1, bytes: 1024, errors: 0 }),
+        transferred: vi.fn().mockResolvedValue([]),
       },
       runs: {
         active: vi.fn().mockReturnValue([stored]),
@@ -99,6 +102,100 @@ describe("TransferService", () => {
 
     await new TransferService(app).reconcile();
 
-    expect(notify).toHaveBeenCalledWith(stored, "success", null);
+    expect(notify).toHaveBeenCalledWith(stored, "success", null, []);
+  });
+
+  it("persiste los archivos fallidos que informa rclone", async () => {
+    const run = { ...runningRun(), rcloneJobIds: [42] };
+    const recordFailures = vi.fn();
+    const app = {
+      rclone: {
+        jobStatus: vi
+          .fn()
+          .mockResolvedValue({ finished: true, success: false, error: "falló" }),
+        stats: vi.fn().mockResolvedValue({ transfers: 1, bytes: 0, errors: 1 }),
+        transferred: vi
+          .fn()
+          .mockResolvedValue([
+            {
+              name: "carpeta/archivo.txt",
+              error: "acceso denegado",
+              bytes: 10,
+              size: 20,
+            },
+          ]),
+      },
+      runs: {
+        active: vi.fn().mockReturnValue([run]),
+        update: vi.fn(),
+        get: vi.fn(() => run),
+        recordFailures,
+      },
+      bandwidth: { release: vi.fn().mockResolvedValue(undefined) },
+      logs: { write: vi.fn() },
+      stats: { emitRunFinished: vi.fn() },
+      notifications: { send: vi.fn() },
+    } as unknown as FastifyInstance;
+
+    await new TransferService(app).reconcile();
+
+    expect(recordFailures).toHaveBeenCalledWith(run.id, [
+      { name: "carpeta/archivo.txt", error: "acceso denegado", bytes: 10, size: 20 },
+    ]);
+  });
+
+  it("reintenta los archivos fallidos como copia no destructiva", async () => {
+    const original = {
+      ...runningRun(),
+      mode: "move" as const,
+      failedFiles: [
+        {
+          id: "failure-1",
+          name: "carpeta/archivo.txt",
+          error: "falló",
+          bytes: 0,
+          size: 20,
+        },
+      ],
+    };
+    const retry = { ...runningRun(), id: "retry-1", group: "run:retry-1" };
+    const app = {
+      rclone: {
+        callAsync: vi.fn().mockResolvedValue(50),
+        call: vi.fn().mockResolvedValue({ finished: true, success: true }),
+        jobStatus: vi.fn().mockResolvedValue({ finished: true, success: true }),
+      },
+      remotes: {
+        types: vi.fn().mockResolvedValue({ drive: "drive", ulima_drive: "drive" }),
+      },
+      settings: {
+        transferDefaults: vi
+          .fn()
+          .mockReturnValue({ transfers: 4, checkers: 8, bwlimit: null }),
+      },
+      runs: {
+        get: vi.fn(() => original),
+        params: vi.fn(() => ({ options: { filters: { include: [], exclude: [] } } })),
+        create: vi.fn().mockReturnValue(retry),
+        attachJobIds: vi.fn(),
+        update: vi.fn(),
+      },
+      bandwidth: {
+        acquire: vi.fn().mockResolvedValue(undefined),
+        release: vi.fn().mockResolvedValue(undefined),
+      },
+      logs: { write: vi.fn() },
+    } as unknown as FastifyInstance;
+
+    await new TransferService(app).retryFailures(original.id, ["failure-1"]);
+
+    expect(app.rclone.callAsync).toHaveBeenCalledWith(
+      "operations/copyfile",
+      expect.objectContaining({ srcRemote: "carpeta/archivo.txt" }),
+      expect.anything(),
+    );
+    expect(app.runs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "copy", retryOfRunId: original.id }),
+    );
   });
 });
