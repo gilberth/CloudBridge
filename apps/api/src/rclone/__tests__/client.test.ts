@@ -175,9 +175,24 @@ describe('RcloneClient', () => {
     });
   });
 
-  it('check() sets sensible defaults for the comparison flags', async () => {
-    fetchMock = mockFetch({ combined: [] });
-    await client(fetchMock as unknown as typeof fetch).check('a:', 'b:');
+  it('check() runs asynchronously and obtains its result from job/status', async () => {
+    fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ jobid: 42 }), { headers: { 'content-type': 'application/json' } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            finished: true,
+            success: true,
+            error: '',
+            output: { combined: [], differ: ['archivo.txt'] },
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    const result = await client(fetchMock as unknown as typeof fetch).check('a:', 'b:');
 
     const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
     expect(body).toMatchObject({
@@ -189,6 +204,9 @@ describe('RcloneClient', () => {
       match: true,
       differ: true,
       error: true,
+      _async: true,
     });
+    expect(result.differ).toEqual(['archivo.txt']);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://rclone.internal:5572/job/status');
   });
 });
