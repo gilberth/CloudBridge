@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
@@ -9,8 +10,8 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
-} from '@dnd-kit/core';
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+} from "@dnd-kit/core";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import {
   Copy,
   Files,
@@ -20,37 +21,37 @@ import {
   MoveRight,
   RefreshCw,
   type LucideIcon,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import type { CompareCategory, CompareResult, FsEntry } from '@cloudbridge/shared';
-import { ApiError, api } from '@/lib/api';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CompareBar } from '@/components/explorer/CompareBar';
-import { RemotePanel, type PanelController } from '@/components/explorer/RemotePanel';
+} from "lucide-react";
+import { toast } from "sonner";
+import type { FsEntry } from "@cloudbridge/shared";
+import { ApiError, api } from "@/lib/api";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RemotePanel, type PanelController } from "@/components/explorer/RemotePanel";
 import {
   TransferDialog,
   type TransferMode,
   type TransferRequest,
-} from '@/components/explorer/TransferDialog';
-import { usePanelState } from '@/hooks/usePanelState';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useHealth } from '@/hooks/useHealth';
-import { cn } from '@/lib/utils';
+} from "@/components/explorer/TransferDialog";
+import { usePanelState } from "@/hooks/usePanelState";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useHealth } from "@/hooks/useHealth";
+import { cn } from "@/lib/utils";
 
-type Side = 'left' | 'right';
+type Side = "left" | "right";
 
 export default function ExplorerPage() {
-  const remotes = useQuery({ queryKey: ['remotes'], queryFn: api.remotes.list });
+  const navigate = useNavigate();
+  const remotes = useQuery({ queryKey: ["remotes"], queryFn: api.remotes.list });
   const availableRemotes = useMemo(
     () => remotes.data?.map((remote) => remote.name),
     [remotes.data],
   );
-  const left = usePanelState('left', availableRemotes);
-  const right = usePanelState('right', availableRemotes);
-  const wide = useMediaQuery('(min-width: 1024px)');
-  const [activePanel, setActivePanel] = useState<Side>('left');
+  const left = usePanelState("left", availableRemotes);
+  const right = usePanelState("right", availableRemotes);
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const [activePanel, setActivePanel] = useState<Side>("left");
   const { data: health } = useHealth();
   const offline = health ? !health.rclone.online : false;
 
@@ -66,8 +67,6 @@ export default function ExplorerPage() {
 
   const [request, setRequest] = useState<TransferRequest | null>(null);
   const [dragging, setDragging] = useState<{ side: Side; count: number } | null>(null);
-  const [compare, setCompare] = useState<CompareResult | null>(null);
-  const [compareFilter, setCompareFilter] = useState<CompareCategory | null>(null);
 
   const transfer = useMutation({
     mutationFn: ({
@@ -94,21 +93,21 @@ export default function ExplorerPage() {
       setRequest(null);
       controllers.current.left?.clearSelection();
       controllers.current.right?.clearSelection();
-      toast.success(run.dryRun ? 'Simulación lanzada' : 'Transferencia lanzada', {
+      toast.success(run.dryRun ? "Simulación lanzada" : "Transferencia lanzada", {
         description: run.label,
       });
     },
     onError: (error) =>
-      toast.error('No se pudo lanzar la transferencia', {
+      toast.error("No se pudo lanzar la transferencia", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });
 
   const propose = useCallback((from: Side, mode: TransferMode, items?: FsEntry[]) => {
     const source = controllers.current[from];
-    const destination = controllers.current[from === 'left' ? 'right' : 'left'];
+    const destination = controllers.current[from === "left" ? "right" : "left"];
     if (!source?.remote || !destination?.remote) {
-      toast.error('Elige un remoto en ambos paneles');
+      toast.error("Elige un remoto en ambos paneles");
       return;
     }
     setRequest({
@@ -124,7 +123,7 @@ export default function ExplorerPage() {
       const source = controllers.current.left;
       const destination = controllers.current.right;
       if (!source?.remote || !destination?.remote) {
-        throw new ApiError(0, 'no_remote', 'Elige un remoto en ambos paneles');
+        throw new ApiError(0, "no_remote", "Elige un remoto en ambos paneles");
       }
       return api.fs.compare({
         source: { remote: source.remote, path: source.path },
@@ -132,33 +131,15 @@ export default function ExplorerPage() {
         deep,
       });
     },
-    onSuccess: (result) => {
-      setCompare(result);
-      setCompareFilter(null);
-      const changes =
-        result.counts.onlySrc + result.counts.onlyDst + result.counts.differ;
-      toast.success(
-        changes === 0
-          ? 'Las dos carpetas coinciden'
-          : `${changes} diferencias encontradas`,
-      );
+    onSuccess: (run) => {
+      toast.success("Comparación iniciada", { description: run.label });
+      navigate("/transfers");
     },
     onError: (error) =>
-      toast.error('No se pudo comparar', {
+      toast.error("No se pudo comparar", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });
-
-  /** Category per entry path; both panels read from the same map. */
-  const compareMap = useMemo(() => {
-    if (!compare) return null;
-    const map = new Map<string, CompareCategory>();
-    for (const row of compare.rows) {
-      const path = row.src?.path ?? row.dst?.path;
-      if (path) map.set(path, row.category);
-    }
-    return map;
-  }, [compare]);
 
   const sensors = useSensors(
     // A few pixels of movement before a drag starts, so clicking still selects.
@@ -176,7 +157,7 @@ export default function ExplorerPage() {
     const to = event.over?.id as Side | undefined;
     setDragging(null);
     if (!from || !to || from === to) return;
-    propose(from, 'copy');
+    propose(from, "copy");
   };
 
   const leftReady = Boolean(controllers.current.left?.remote);
@@ -186,16 +167,14 @@ export default function ExplorerPage() {
   const panel = (side: Side) => (
     <RemotePanel
       side={side}
-      state={side === 'left' ? left : right}
-      compare={compareMap}
-      compareFilter={compareFilter}
+      state={side === "left" ? left : right}
       otherPanelLabel={
-        side === 'left'
+        side === "left"
           ? (controllers.current.right?.remote ?? null)
           : (controllers.current.left?.remote ?? null)
       }
-      onCopyTo={(entries) => propose(side, 'copy', entries)}
-      onMoveTo={(entries) => propose(side, 'move', entries)}
+      onCopyTo={(entries) => propose(side, "copy", entries)}
+      onMoveTo={(entries) => propose(side, "move", entries)}
       onController={(controller) => setController(side, controller)}
       disabled={offline}
     />
@@ -247,20 +226,6 @@ export default function ExplorerPage() {
           }
         />
 
-        {compare && (
-          <CompareBar
-            result={compare}
-            filter={compareFilter}
-            onFilterChange={setCompareFilter}
-            onRefresh={() => runCompare.mutate(compare.deep)}
-            onClose={() => {
-              setCompare(null);
-              setCompareFilter(null);
-            }}
-            refreshing={runCompare.isPending}
-          />
-        )}
-
         {wide ? (
           <PanelGroup
             direction="horizontal"
@@ -269,7 +234,7 @@ export default function ExplorerPage() {
           >
             <Panel defaultSize={50} minSize={20}>
               <DropZone side="left" activeFrom={dragging?.side ?? null}>
-                {panel('left')}
+                {panel("left")}
               </DropZone>
             </Panel>
 
@@ -283,7 +248,7 @@ export default function ExplorerPage() {
                 icon={Copy}
                 iconClassName="text-sky-400"
                 disabled={!bothReady}
-                onClick={() => propose('left', 'copy')}
+                onClick={() => propose("left", "copy")}
               >
                 Copiar →
               </CentreAction>
@@ -292,7 +257,7 @@ export default function ExplorerPage() {
                 icon={Copy}
                 iconClassName="text-sky-400"
                 disabled={!bothReady}
-                onClick={() => propose('right', 'copy')}
+                onClick={() => propose("right", "copy")}
               >
                 ← Copiar
               </CentreAction>
@@ -302,7 +267,7 @@ export default function ExplorerPage() {
                 icon={MoveRight}
                 iconClassName="text-amber-400"
                 disabled={!bothReady}
-                onClick={() => propose('left', 'move')}
+                onClick={() => propose("left", "move")}
               >
                 Mover →
               </CentreAction>
@@ -311,7 +276,7 @@ export default function ExplorerPage() {
                 icon={MoveLeft}
                 iconClassName="text-amber-400"
                 disabled={!bothReady}
-                onClick={() => propose('right', 'move')}
+                onClick={() => propose("right", "move")}
               >
                 ← Mover
               </CentreAction>
@@ -321,7 +286,7 @@ export default function ExplorerPage() {
                 icon={RefreshCw}
                 iconClassName="text-emerald-400"
                 disabled={!bothReady}
-                onClick={() => propose('left', 'sync')}
+                onClick={() => propose("left", "sync")}
               >
                 Sync →
               </CentreAction>
@@ -329,7 +294,7 @@ export default function ExplorerPage() {
 
             <Panel defaultSize={50} minSize={20}>
               <DropZone side="right" activeFrom={dragging?.side ?? null}>
-                {panel('right')}
+                {panel("right")}
               </DropZone>
             </Panel>
           </PanelGroup>
@@ -356,7 +321,7 @@ export default function ExplorerPage() {
         {dragging && (
           <div className="flex items-center gap-1.5 rounded-md border border-primary bg-popover px-2 py-1 text-[12px] shadow-lg">
             <Files className="size-3.5 text-primary" />
-            {dragging.count} elemento{dragging.count === 1 ? '' : 's'}
+            {dragging.count} elemento{dragging.count === 1 ? "" : "s"}
           </div>
         )}
       </DragOverlay>
@@ -381,9 +346,9 @@ function DropZone({
     <div
       ref={setNodeRef}
       className={cn(
-        'h-full transition-shadow',
-        canDrop && 'ring-1 ring-inset ring-primary/40',
-        canDrop && isOver && 'ring-2 ring-primary',
+        "h-full transition-shadow",
+        canDrop && "ring-1 ring-inset ring-primary/40",
+        canDrop && isOver && "ring-2 ring-primary",
       )}
     >
       {children}
@@ -416,7 +381,7 @@ function CentreAction({
       disabled={disabled}
       onClick={onClick}
     >
-      <Icon className={cn('size-4', iconClassName)} aria-hidden="true" />
+      <Icon className={cn("size-4", iconClassName)} aria-hidden="true" />
       {children}
     </Button>
   );

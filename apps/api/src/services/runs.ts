@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, lt, notInArray } from "drizzle-orm";
 import type {
   FailedTransferFile,
-  JobMode,
+  RunMode,
   RemotePath,
   Run,
   RunStatus,
@@ -16,7 +16,7 @@ export interface CreateRunInput {
   jobId?: string | null;
   jobName?: string | null;
   label: string;
-  mode: JobMode;
+  mode: RunMode;
   dryRun: boolean;
   source: RemotePath | null;
   destinations: RemotePath[];
@@ -79,6 +79,7 @@ export class RunsService {
       dryRunReport: string | null;
       failedFiles: FailedTransferFile[];
       rcloneJobIds: number[];
+      params: unknown;
     }>,
   ): void {
     this.db.update(runs).set(patch).where(eq(runs.id, id)).run();
@@ -169,6 +170,9 @@ export class RunsService {
 
   private toRun(row: RunRow): Run {
     const finishedAt = row.finishedAt;
+    const params = row.params as {
+      comparison?: import("@cloudbridge/shared").CompareResult;
+    } | null;
     return {
       id: row.id,
       jobId: row.jobId,
@@ -195,6 +199,7 @@ export class RunsService {
       failedFiles: (row.failedFiles as FailedTransferFile[]) ?? [],
       retryOfRunId: row.retryOfRunId,
       dryRunReport: row.dryRunReport,
+      comparison: params?.comparison ?? null,
     };
   }
 

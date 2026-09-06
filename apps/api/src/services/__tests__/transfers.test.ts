@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { Run } from "@cloudbridge/shared";
+import type { CompareResult, FsCompareInput, Run } from "@cloudbridge/shared";
 import { describe, expect, it, vi } from "vitest";
 import { TransferService } from "../transfers.js";
 
@@ -26,10 +26,48 @@ function runningRun(): Run {
     failedFiles: [],
     retryOfRunId: null,
     dryRunReport: null,
+    comparison: null,
   };
 }
 
 describe("TransferService", () => {
+  it("persiste y completa una comparación profunda", async () => {
+    const run = { ...runningRun(), mode: "compare" as const };
+    const input: FsCompareInput = {
+      source: { remote: "drive", path: "origen" },
+      destination: { remote: "ulima_drive", path: "destino" },
+      deep: true,
+      recurse: false,
+      download: false,
+    };
+    const result: CompareResult = {
+      source: input.source,
+      destination: input.destination,
+      deep: true,
+      rows: [],
+      counts: { onlySrc: 0, onlyDst: 0, differ: 0, identical: 0 },
+    };
+    const update = vi.fn();
+    const app = {
+      fs: { compare: vi.fn().mockResolvedValue(result) },
+      runs: { create: vi.fn().mockReturnValue(run), update },
+      logs: { write: vi.fn() },
+    } as unknown as FastifyInstance;
+
+    const started = await new TransferService(app).compare(input);
+
+    expect(started.mode).toBe("compare");
+    expect(app.runs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "compare", source: input.source }),
+    );
+    await vi.waitFor(() =>
+      expect(update).toHaveBeenCalledWith(
+        run.id,
+        expect.objectContaining({ status: "success", files: 0, errors: 0 }),
+      ),
+    );
+  });
+
   it("copies selected Drive folders without forcing server-side across configs", async () => {
     const syncCopy = vi.fn().mockResolvedValue(42);
     const run = runningRun();
@@ -114,16 +152,14 @@ describe("TransferService", () => {
           .fn()
           .mockResolvedValue({ finished: true, success: false, error: "falló" }),
         stats: vi.fn().mockResolvedValue({ transfers: 1, bytes: 0, errors: 1 }),
-        transferred: vi
-          .fn()
-          .mockResolvedValue([
-            {
-              name: "carpeta/archivo.txt",
-              error: "acceso denegado",
-              bytes: 10,
-              size: 20,
-            },
-          ]),
+        transferred: vi.fn().mockResolvedValue([
+          {
+            name: "carpeta/archivo.txt",
+            error: "acceso denegado",
+            bytes: 10,
+            size: 20,
+          },
+        ]),
       },
       runs: {
         active: vi.fn().mockReturnValue([run]),

@@ -12,7 +12,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Run, RunStatus } from "@cloudbridge/shared";
+import type { CompareCategory, Run, RunStatus } from "@cloudbridge/shared";
 import { ApiError, api } from "@/lib/api";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -143,6 +143,7 @@ export default function TransfersPage() {
             const stats = live?.stats;
             const percentage =
               stats && stats.totalBytes > 0 ? (stats.bytes / stats.totalBytes) * 100 : 0;
+            const isComparison = run.mode === "compare";
 
             return (
               <article key={run.id} className="border-b border-border px-4 py-2.5">
@@ -155,66 +156,75 @@ export default function TransfersPage() {
                     {run.label}
                   </span>
 
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    {run.status === "running" ? (
+                  {!isComparison && (
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {run.status === "running" ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Pausar"
+                              onClick={() => act.mutate({ id: run.id, action: "pause" })}
+                            >
+                              <Pause />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Pausar (para el job y lo relanza al reanudar)
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Reanudar"
+                              onClick={() => act.mutate({ id: run.id, action: "resume" })}
+                            >
+                              <Play />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Reanudar</TooltipContent>
+                        </Tooltip>
+                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="Pausar"
-                            onClick={() => act.mutate({ id: run.id, action: "pause" })}
+                            aria-label="Cancelar"
+                            className="text-destructive"
+                            disabled={run.status !== "running"}
+                            onClick={() => act.mutate({ id: run.id, action: "stop" })}
                           >
-                            <Pause />
+                            <Ban />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
-                          Pausar (para el job y lo relanza al reanudar)
-                        </TooltipContent>
+                        <TooltipContent>Cancelar</TooltipContent>
                       </Tooltip>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="Reanudar"
-                            onClick={() => act.mutate({ id: run.id, action: "resume" })}
-                          >
-                            <Play />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Reanudar</TooltipContent>
-                      </Tooltip>
-                    )}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label="Cancelar"
-                          className="text-destructive"
-                          disabled={run.status !== "running"}
-                          onClick={() => act.mutate({ id: run.id, action: "stop" })}
-                        >
-                          <Ban />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>Cancelar</TooltipContent>
-                    </Tooltip>
-                  </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="mt-1.5 flex items-center gap-3">
-                  <Progress value={percentage} className="flex-1" />
-                  <span className="w-40 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
-                    {humanBytes(stats?.bytes ?? run.bytes)} /{" "}
-                    {humanBytes(stats?.totalBytes ?? 0)} · {humanSpeed(stats?.speed ?? 0)}
-                  </span>
-                  <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
-                    {stats?.eta != null ? humanDuration(stats.eta) : "—"}
-                  </span>
-                </div>
+                {isComparison ? (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Comparando archivos{run.source ? ` de ${run.source.remote}` : ""}…
+                  </p>
+                ) : (
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <Progress value={percentage} className="flex-1" />
+                    <span className="w-40 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                      {humanBytes(stats?.bytes ?? run.bytes)} /{" "}
+                      {humanBytes(stats?.totalBytes ?? 0)} ·{" "}
+                      {humanSpeed(stats?.speed ?? 0)}
+                    </span>
+                    <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                      {stats?.eta != null ? humanDuration(stats.eta) : "—"}
+                    </span>
+                  </div>
+                )}
               </article>
             );
           })}
@@ -307,6 +317,7 @@ function FinishedRow({
   retrying: boolean;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const isComparison = run.mode === "compare";
   const meta = STATUS_META[run.status];
   const Icon =
     run.status === "success"
@@ -340,6 +351,16 @@ function FinishedRow({
               {run.failedFiles.length} archivo{run.failedFiles.length === 1 ? "" : "s"}
             </Button>
           )}
+          {isComparison && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-[11px]"
+              onClick={() => setDetailsOpen(true)}
+            >
+              Ver diferencias
+            </Button>
+          )}
         </span>
       </td>
       <td
@@ -359,14 +380,94 @@ function FinishedRow({
       <td className="px-4 py-1.5 text-right tabular-nums text-muted-foreground">
         {formatDateTime(run.startedAt)}
       </td>
-      <FailureDetails
-        run={run}
-        open={detailsOpen}
-        onOpenChange={setDetailsOpen}
-        onRetry={onRetry}
-        retrying={retrying}
-      />
+      {isComparison ? (
+        <ComparisonDetails run={run} open={detailsOpen} onOpenChange={setDetailsOpen} />
+      ) : (
+        <FailureDetails
+          run={run}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          onRetry={onRetry}
+          retrying={retrying}
+        />
+      )}
     </tr>
+  );
+}
+
+const CATEGORY_LABEL: Record<CompareCategory, string> = {
+  onlySrc: "Solo en origen",
+  onlyDst: "Solo en destino",
+  differ: "Distinto",
+  identical: "Igual",
+};
+
+function ComparisonDetails({
+  run,
+  open,
+  onOpenChange,
+}: {
+  run: Run;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const result = run.comparison;
+  const differences = result?.rows.filter((row) => row.category !== "identical") ?? [];
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>
+            {result?.deep ? "Comparación profunda" : "Comparación"}
+          </DialogTitle>
+          <DialogDescription>
+            {result
+              ? `${differences.length} diferencia${differences.length === 1 ? "" : "s"} entre los remotos.`
+              : (run.errorMessage ?? "La comparación aún no tiene resultados.")}
+          </DialogDescription>
+        </DialogHeader>
+        {result && (
+          <>
+            <div className="grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-4">
+              {(Object.keys(result.counts) as CompareCategory[]).map((category) => (
+                <div key={category} className="rounded-md border border-border px-3 py-2">
+                  <p className="text-muted-foreground">{CATEGORY_LABEL[category]}</p>
+                  <p className="mt-0.5 font-medium tabular-nums">
+                    {result.counts[category]}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="max-h-80 overflow-y-auto rounded-md border border-border">
+              {differences.length === 0 ? (
+                <p className="p-3 text-[12px] text-muted-foreground">
+                  No se encontraron diferencias.
+                </p>
+              ) : (
+                differences.map((row) => (
+                  <div
+                    key={`${row.category}:${row.name}`}
+                    className="flex gap-3 border-b border-border/60 p-3 last:border-b-0"
+                  >
+                    <span className="w-28 shrink-0 text-[11px] text-muted-foreground">
+                      {CATEGORY_LABEL[row.category]}
+                    </span>
+                    <p className="mono break-all text-[12px]">
+                      {row.src?.path ?? row.dst?.path ?? row.name}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cerrar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

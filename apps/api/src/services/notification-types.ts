@@ -1,4 +1,4 @@
-import type { JobMode } from "@cloudbridge/shared";
+import type { RunMode } from "@cloudbridge/shared";
 
 export interface NotificationFailedFile {
   name: string;
@@ -10,7 +10,7 @@ export interface NotificationFailedFile {
 export interface NotificationEvent {
   outcome: "success" | "error";
   job: string;
-  mode: JobMode;
+  mode: RunMode;
   source: string;
   destinations: string[];
   files: number;

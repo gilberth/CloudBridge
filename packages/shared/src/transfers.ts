@@ -1,5 +1,5 @@
-import type { JobMode, RunStatus } from "./common.js";
-import type { RemotePath } from "./fs.js";
+import type { RunMode, RunStatus } from "./common.js";
+import type { CompareResult, RemotePath } from "./fs.js";
 
 /** A single in-flight file, as reported by rclone `core/stats`. */
 export interface TransferItem {
@@ -55,7 +55,7 @@ export interface Run {
   jobId: string | null;
   jobName: string | null;
   label: string;
-  mode: JobMode;
+  mode: RunMode;
   status: RunStatus;
   dryRun: boolean;
   /** rclone stats group, `run:<id>`. */
@@ -76,6 +76,8 @@ export interface Run {
   retryOfRunId: string | null;
   /** Textual output of a `--dry-run` execution, when there is one. */
   dryRunReport: string | null;
+  /** Result retained for an ad-hoc comparison; null for ordinary transfers. */
+  comparison: CompareResult | null;
 }
 
 export interface FailedTransferFile {

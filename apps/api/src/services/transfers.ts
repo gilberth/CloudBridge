@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type {
   JobMode,
+  FsCompareInput,
   RemotePath,
   Run,
   TransferFilters,
@@ -41,6 +42,11 @@ interface RunParams {
   destinations: RemotePath[];
   items: SelectedItem[];
   options: TransferOptions;
+}
+
+interface CompareRunParams {
+  input: FsCompareInput;
+  comparison?: import("@cloudbridge/shared").CompareResult;
 }
 
 /**
@@ -186,6 +192,76 @@ export class TransferService {
         },
       );
       throw error;
+    }
+  }
+
+  /**
+   * Run a read-only comparison independently of the HTTP request that starts
+   * it, so leaving Explorer cannot cancel the work or hide its result.
+   */
+  async compare(input: FsCompareInput): Promise<Run> {
+    const deepLabel = input.deep ? "Comparación profunda" : "Comparación";
+    const label = `${deepLabel} ${input.source.remote}:${input.source.path} → ${input.destination.remote}:${input.destination.path}`;
+    const run = this.app.runs.create({
+      label,
+      mode: "compare",
+      dryRun: false,
+      source: input.source,
+      destinations: [input.destination],
+      params: { input } satisfies CompareRunParams,
+    });
+    this.app.logs.write(
+      "info",
+      "compare",
+      `${deepLabel} iniciada: ${label}`,
+      { deep: input.deep },
+      { runId: run.id },
+    );
+    void this.finishComparison(run.id, input, label);
+    return run;
+  }
+
+  private async finishComparison(
+    id: string,
+    input: FsCompareInput,
+    label: string,
+  ): Promise<void> {
+    try {
+      const comparison = await this.app.fs.compare(input);
+      const differences =
+        comparison.counts.onlySrc + comparison.counts.onlyDst + comparison.counts.differ;
+      this.app.runs.update(id, {
+        status: "success",
+        finishedAt: new Date().toISOString(),
+        files: comparison.rows.length,
+        // A content difference is a result, not an execution error.
+        errors: 0,
+        errorMessage: null,
+        params: { input, comparison } satisfies CompareRunParams,
+      });
+      this.app.logs.write(
+        "info",
+        "compare",
+        `${label}: ${differences} diferencia${differences === 1 ? "" : "s"}`,
+        { differences },
+        { runId: id },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "No se pudo comparar los remotos";
+      this.app.runs.update(id, {
+        status: "error",
+        finishedAt: new Date().toISOString(),
+        errors: 1,
+        errorMessage: message,
+      });
+      this.app.logs.write(
+        "error",
+        "compare",
+        `Falló: ${label}`,
+        { error: message },
+        { runId: id },
+      );
     }
   }
 
