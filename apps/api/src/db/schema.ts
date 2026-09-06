@@ -90,7 +90,7 @@ export const runs = sqliteTable(
     jobId: text("job_id").references(() => jobs.id, { onDelete: "set null" }),
     jobName: text("job_name"),
     label: text("label").notNull(),
-    mode: text("mode", { enum: ["copy", "sync", "move", "bisync"] }).notNull(),
+    mode: text("mode", { enum: ["copy", "sync", "move", "bisync", "compare"] }).notNull(),
     status: text("status", {
       enum: ["running", "paused", "success", "error", "cancelled", "interrupted"],
     })

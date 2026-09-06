@@ -166,7 +166,7 @@ export const api = {
       request<SizeResult>(`/api/fs/size${qs({ remote, path })}`),
     transfer: (mode: "copy" | "move" | "sync", body: unknown) =>
       post<Run>(`/api/fs/${mode}`, body),
-    compare: (body: unknown) => post<CompareResult>("/api/fs/compare", body),
+    compare: (body: unknown) => post<Run>("/api/fs/compare", body),
     downloadUrl: (remote: string, path: string) =>
       `/api/fs/download${qs({ remote, path })}`,
   },
