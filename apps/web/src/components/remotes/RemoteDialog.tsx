@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronDown,
   ChevronRight,
@@ -9,15 +9,15 @@ import {
   LoaderCircle,
   Settings2,
   Terminal,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 import type {
   ProviderInfo,
   ProviderOption,
   RemoteSetupResult,
-} from '@cloudbridge/shared';
-import { ApiError, api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
+} from "@cloudbridge/shared";
+import { ApiError, api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -25,30 +25,30 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { FieldHelp } from '@/components/ui/field-help';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { FieldHelp } from "@/components/ui/field-help";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Command,
   CommandEmpty,
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
-import { ProviderIcon } from '@/components/provider-icon';
-import { ProviderField } from './ProviderField';
+} from "@/components/ui/command";
+import { ProviderIcon } from "@/components/provider-icon";
+import { ProviderField } from "./ProviderField";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { localizeSetupOption } from '@/i18n/provider-options';
+} from "@/components/ui/select";
+import { localizeSetupOption } from "@/i18n/provider-options";
 
-type SetupQuestion = Extract<RemoteSetupResult, { status: 'question' }>;
+type SetupQuestion = Extract<RemoteSetupResult, { status: "question" }>;
 
 /** Options every provider gets, ordered so the important ones come first. */
 function visibleOptions(
@@ -57,15 +57,15 @@ function visibleOptions(
 ): ProviderOption[] {
   const variant = values.provider;
   return provider.options
-    .filter((option) => option.name !== 'token')
+    .filter((option) => option.name !== "token")
     .filter((option) => {
       if (!option.provider) return true;
       if (!variant) return true;
       // rclone uses "!Other,Foo" to mean "every provider except these".
-      if (option.provider.startsWith('!')) {
-        return !option.provider.slice(1).split(',').includes(variant);
+      if (option.provider.startsWith("!")) {
+        return !option.provider.slice(1).split(",").includes(variant);
       }
-      return option.provider.split(',').includes(variant);
+      return option.provider.split(",").includes(variant);
     })
     .sort(
       (a, b) =>
@@ -78,40 +78,43 @@ export function RemoteDialog({
   open,
   onOpenChange,
   editing,
+  reconnect = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Name of the remote being edited; undefined creates a new one. */
   editing?: string;
+  /** Opens the existing OAuth editor with an explicit reconnection intent. */
+  reconnect?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [type, setType] = useState<string | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [values, setValues] = useState<Record<string, string>>({});
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [setupQuestion, setSetupQuestion] = useState<SetupQuestion | null>(null);
-  const [setupAnswer, setSetupAnswer] = useState('');
+  const [setupAnswer, setSetupAnswer] = useState("");
 
   const providersQuery = useQuery({
-    queryKey: ['providers'],
+    queryKey: ["providers"],
     queryFn: api.remotes.providers,
     enabled: open,
     staleTime: 600_000,
   });
 
   const detailQuery = useQuery({
-    queryKey: ['remote', editing],
+    queryKey: ["remote", editing],
     queryFn: () => api.remotes.get(editing!),
     enabled: open && Boolean(editing),
   });
 
   useEffect(() => {
     if (!open) return;
-    setToken('');
+    setToken("");
     setShowAdvanced(false);
     setSetupQuestion(null);
-    setSetupAnswer('');
+    setSetupAnswer("");
     if (editing && detailQuery.data) {
       setType(detailQuery.data.type);
       setName(detailQuery.data.name);
@@ -119,7 +122,7 @@ export function RemoteDialog({
       setValues(rest);
     } else if (!editing) {
       setType(null);
-      setName('');
+      setName("");
       setValues({});
     }
   }, [open, editing, detailQuery.data]);
@@ -143,7 +146,7 @@ export function RemoteDialog({
         });
       }
       const parameters = Object.fromEntries(
-        Object.entries(values).filter(([, value]) => value !== ''),
+        Object.entries(values).filter(([, value]) => value !== ""),
       );
       if (editing) {
         return api.remotes.update(editing, { parameters, ...(token ? { token } : {}) });
@@ -156,32 +159,32 @@ export function RemoteDialog({
       });
     },
     onSuccess: (result) => {
-      if (result.status === 'question') {
+      if (result.status === "question") {
         setSetupQuestion(result);
         setSetupAnswer(
           result.option.default === undefined || result.option.default === null
-            ? ''
+            ? ""
             : String(result.option.default),
         );
         return;
       }
       const remote = result.remote;
-      void queryClient.invalidateQueries({ queryKey: ['remotes'] });
-      void queryClient.invalidateQueries({ queryKey: ['remote', remote.name] });
+      void queryClient.invalidateQueries({ queryKey: ["remotes"] });
+      void queryClient.invalidateQueries({ queryKey: ["remote", remote.name] });
       toast.success(
         editing
           ? `Remoto "${remote.name}" actualizado`
           : `Remoto "${remote.name}" creado`,
         {
           description: remote.online
-            ? 'Conexión verificada correctamente.'
-            : (remote.error ?? 'Guardado, pero la conexión de prueba falló.'),
+            ? "Conexión verificada correctamente."
+            : (remote.error ?? "Guardado, pero la conexión de prueba falló."),
         },
       );
       onOpenChange(false);
     },
     onError: (error) =>
-      toast.error('No se pudo guardar el remoto', {
+      toast.error("No se pudo guardar el remoto", {
         description: error instanceof ApiError ? error.message : String(error),
       }),
   });
@@ -193,14 +196,14 @@ export function RemoteDialog({
   const closeDialog = () => {
     const incompleteSetup = setupQuestion;
     setSetupQuestion(null);
-    setSetupAnswer('');
+    setSetupAnswer("");
     onOpenChange(false);
     if (!incompleteSetup) return;
     void api.remotes
       .cancelSetup(incompleteSetup.remoteName, incompleteSetup.setupId)
-      .then(() => queryClient.invalidateQueries({ queryKey: ['remotes'] }))
+      .then(() => queryClient.invalidateQueries({ queryKey: ["remotes"] }))
       .catch((error) =>
-        toast.error('No se pudo cancelar la configuración', {
+        toast.error("No se pudo cancelar la configuración", {
           description: error instanceof ApiError ? error.message : String(error),
         }),
       );
@@ -220,18 +223,26 @@ export function RemoteDialog({
       >
         <div className="flex max-h-[90vh] flex-col">
           <DialogHeader className="mb-0 border-b border-border/70 bg-muted/20 px-5 pb-4 pt-5">
-            <DialogTitle>{editing ? `Editar "${editing}"` : 'Añadir remoto'}</DialogTitle>
+            <DialogTitle>
+              {reconnect
+                ? `Reconectar "${editing}"`
+                : editing
+                  ? `Editar "${editing}"`
+                  : "Añadir remoto"}
+            </DialogTitle>
             <DialogDescription>
-              {editing
-                ? 'Los secretos guardados se muestran enmascarados; escribe uno nuevo solo si quieres reemplazarlo.'
-                : 'Elige el proveedor, identifica el remoto y completa únicamente los datos necesarios.'}
+              {reconnect
+                ? "Pega un token OAuth nuevo para restaurar el acceso; se conservará el resto de la configuración."
+                : editing
+                  ? "Los secretos guardados se muestran enmascarados; escribe uno nuevo solo si quieres reemplazarlo."
+                  : "Elige el proveedor, identifica el remoto y completa únicamente los datos necesarios."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {setupQuestion ? (
               <SetupQuestionCard
-                provider={type ?? 'unknown'}
+                provider={type ?? "unknown"}
                 question={setupQuestion}
                 answer={setupAnswer}
                 onAnswerChange={setSetupAnswer}
@@ -337,7 +348,7 @@ export function RemoteDialog({
                         key={option.name}
                         option={option}
                         provider={type}
-                        value={values[option.name] ?? ''}
+                        value={values[option.name] ?? ""}
                         onChange={(value) =>
                           setValues((previous) => ({ ...previous, [option.name]: value }))
                         }
@@ -365,7 +376,7 @@ export function RemoteDialog({
                                 key={option.name}
                                 option={option}
                                 provider={type}
-                                value={values[option.name] ?? ''}
+                                value={values[option.name] ?? ""}
                                 onChange={(value) =>
                                   setValues((previous) => ({
                                     ...previous,
@@ -390,7 +401,13 @@ export function RemoteDialog({
             </Button>
             <Button onClick={() => save.mutate()} disabled={!canSave || save.isPending}>
               {save.isPending && <LoaderCircle className="animate-spin" />}
-              {setupQuestion ? 'Continuar' : editing ? 'Guardar cambios' : 'Crear remoto'}
+              {setupQuestion
+                ? "Continuar"
+                : reconnect
+                  ? "Guardar reconexión"
+                  : editing
+                    ? "Guardar cambios"
+                    : "Crear remoto"}
             </Button>
           </DialogFooter>
         </div>
@@ -427,7 +444,9 @@ function SetupQuestionCard({
             {translation.label}
             {question.option.required && <span className="ml-1 text-destructive">*</span>}
           </Label>
-          <p className="text-[11px] leading-4 text-muted-foreground">{translation.help}</p>
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            {translation.help}
+          </p>
           {examples.length > 0 && question.option.exclusive ? (
             <Select value={answer} onValueChange={onAnswerChange}>
               <SelectTrigger id={id}>
@@ -447,7 +466,7 @@ function SetupQuestionCard({
           ) : (
             <Input
               id={id}
-              type={question.option.isPassword ? 'password' : 'text'}
+              type={question.option.isPassword ? "password" : "text"}
               value={answer}
               placeholder={
                 question.option.default === undefined
@@ -531,7 +550,7 @@ function OAuthHelp({
               size="sm"
               onClick={() => {
                 void navigator.clipboard.writeText(command);
-                toast.success('Comando copiado');
+                toast.success("Comando copiado");
               }}
             >
               Copiar
