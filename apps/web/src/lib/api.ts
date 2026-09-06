@@ -1,7 +1,6 @@
 import type {
   AppSettings,
   NotificationChannelInput,
-  CompareResult,
   CronPreview,
   FsListing,
   Job,
