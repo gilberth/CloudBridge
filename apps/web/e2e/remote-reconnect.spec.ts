@@ -58,5 +58,37 @@ test("ofrece reconectar solo para un remoto OAuth en error", async ({ page }) =>
   await page.getByRole("button", { name: "Reconectar drive" }).click();
   const dialog = page.getByRole("dialog", { name: 'Reconectar "drive"' });
   await expect(dialog).toContainText("Pega un token OAuth nuevo");
-  await expect(dialog.getByLabel("Token OAuth")).toBeVisible();
+  const token = dialog.getByLabel("Token OAuth");
+  const save = dialog.getByRole("button", { name: "Guardar reconexión" });
+  await expect(token).toBeVisible();
+  await expect(save).toBeDisabled();
+  await token.fill('{"access_token":"nuevo","refresh_token":"renovación"}');
+  await expect(save).toBeEnabled();
+});
+
+test("mantiene abierto el modal cuando el token nuevo no recupera la conexión", async ({
+  page,
+}) => {
+  await page.route("**/api/remotes/drive", async (route) => {
+    if (route.request().method() === "PUT") {
+      await route.fulfill({
+        json: {
+          status: "complete",
+          remote: { ...oauthRemote, error: "El token nuevo fue rechazado" },
+        },
+      });
+      return;
+    }
+    await route.fulfill({ json: { ...oauthRemote, parameters: { type: "drive" } } });
+  });
+
+  await page.goto("/remotes");
+  await page.getByRole("button", { name: "Reconectar drive" }).click();
+  const dialog = page.getByRole("dialog", { name: 'Reconectar "drive"' });
+  await dialog.getByLabel("Token OAuth").fill('{"access_token":"nuevo"}');
+  await dialog.getByRole("button", { name: "Guardar reconexión" }).click();
+
+  await expect(dialog).toBeVisible();
+  await expect(page.getByText("No se pudo reconectar el remoto")).toBeVisible();
+  await expect(page.getByText("El token nuevo fue rechazado")).toBeVisible();
 });

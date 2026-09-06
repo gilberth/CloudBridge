@@ -171,6 +171,12 @@ export function RemoteDialog({
       const remote = result.remote;
       void queryClient.invalidateQueries({ queryKey: ["remotes"] });
       void queryClient.invalidateQueries({ queryKey: ["remote", remote.name] });
+      if (reconnect && !remote.online) {
+        toast.error("No se pudo reconectar el remoto", {
+          description: remote.error ?? "El proveedor rechazó la nueva autorización.",
+        });
+        return;
+      }
       toast.success(
         editing
           ? `Remoto "${remote.name}" actualizado`
@@ -191,7 +197,8 @@ export function RemoteDialog({
 
   const canSave = setupQuestion
     ? !setupQuestion.option.required || setupAnswer.length > 0
-    : Boolean(type) && (editing ? true : name.trim().length > 0);
+    : Boolean(type) &&
+      (reconnect ? token.trim().length > 0 : editing ? true : name.trim().length > 0);
 
   const closeDialog = () => {
     const incompleteSetup = setupQuestion;
