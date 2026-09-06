@@ -8,7 +8,7 @@ const httpUrlSchema = z
   .string()
   .url()
   .max(2048)
-  .refine((value) => ["http:", "https:"].includes(new URL(value).protocol), {
+  .regex(/^https?:\/\//i, {
     message: "La URL debe usar HTTP o HTTPS",
   });
 
