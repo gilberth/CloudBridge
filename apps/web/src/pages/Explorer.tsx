@@ -128,6 +128,7 @@ export default function ExplorerPage() {
       return api.fs.compare({
         source: { remote: source.remote, path: source.path },
         destination: { remote: destination.remote, path: destination.path },
+        recurse: true,
         deep,
       });
     },

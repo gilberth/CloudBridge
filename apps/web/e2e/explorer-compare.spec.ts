@@ -59,9 +59,10 @@ test("lanza una comparación profunda como ejecución persistente", async ({ pag
   await page.route("**/api/fs/list*", (route) =>
     route.fulfill({ json: { remote: "src", path: "", entries: [] } }),
   );
-  await page.route("**/api/fs/compare", (route) =>
-    route.fulfill({ json: comparisonRun }),
-  );
+  await page.route("**/api/fs/compare", (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ deep: true, recurse: true });
+    return route.fulfill({ json: comparisonRun });
+  });
   await page.route("**/api/transfers", (route) =>
     route.fulfill({ json: [comparisonRun] }),
   );
@@ -70,5 +71,7 @@ test("lanza una comparación profunda como ejecución persistente", async ({ pag
   await page.getByRole("button", { name: "Comparación profunda" }).click();
 
   await expect(page).toHaveURL(/\/transfers/);
-  await expect(page.getByText("Comparación profunda src: → dst:")).toBeVisible();
+  await expect(
+    page.getByRole("article").getByText("Comparación profunda src: → dst:"),
+  ).toBeVisible();
 });
