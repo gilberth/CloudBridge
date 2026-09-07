@@ -206,7 +206,8 @@ export const fsTransferSchema = z.object({
 export const fsCompareSchema = z.object({
   source: remotePathSchema,
   destination: remotePathSchema,
-  recurse: z.boolean().default(false),
+  /** Comparisons audit the complete tree unless an API caller opts out explicitly. */
+  recurse: z.boolean().default(true),
   /** Use `operations/check` (hashes, optionally downloading) instead of size+mtime. */
   deep: z.boolean().default(false),
   download: z.boolean().default(false),

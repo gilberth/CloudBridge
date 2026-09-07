@@ -446,7 +446,7 @@ function ComparisonDetails({
               ) : (
                 differences.map((row) => (
                   <div
-                    key={`${row.category}:${row.name}`}
+                    key={`${row.category}:${row.src?.path ?? row.dst?.path ?? row.name}`}
                     className="flex gap-3 border-b border-border/60 p-3 last:border-b-0"
                   >
                     <span className="w-28 shrink-0 text-[11px] text-muted-foreground">

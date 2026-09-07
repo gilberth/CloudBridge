@@ -37,15 +37,18 @@ describe("TransferService", () => {
       source: { remote: "drive", path: "origen" },
       destination: { remote: "ulima_drive", path: "destino" },
       deep: true,
-      recurse: false,
+      recurse: true,
       download: false,
     };
     const result: CompareResult = {
       source: input.source,
       destination: input.destination,
       deep: true,
-      rows: [],
-      counts: { onlySrc: 0, onlyDst: 0, differ: 0, identical: 0 },
+      rows: [
+        { name: "igual.txt", isDir: false, category: "identical" },
+        { name: "falta.txt", isDir: false, category: "onlySrc" },
+      ],
+      counts: { onlySrc: 1, onlyDst: 0, differ: 0, identical: 1 },
     };
     const update = vi.fn();
     const app = {
@@ -63,7 +66,18 @@ describe("TransferService", () => {
     await vi.waitFor(() =>
       expect(update).toHaveBeenCalledWith(
         run.id,
-        expect.objectContaining({ status: "success", files: 0, errors: 0 }),
+        expect.objectContaining({
+          status: "success",
+          files: 2,
+          errors: 0,
+          params: {
+            input,
+            comparison: {
+              ...result,
+              rows: [{ name: "falta.txt", isDir: false, category: "onlySrc" }],
+            },
+          },
+        }),
       ),
     );
   });

@@ -230,14 +230,24 @@ export class TransferService {
       const comparison = await this.app.fs.compare(input);
       const differences =
         comparison.counts.onlySrc + comparison.counts.onlyDst + comparison.counts.differ;
+      const totalFiles = Object.values(comparison.counts).reduce(
+        (total, count) => total + count,
+        0,
+      );
+      // Matching entries can be numerous and add no value to the persisted
+      // detail. Keep their count while storing only actionable differences.
+      const persistedComparison = {
+        ...comparison,
+        rows: comparison.rows.filter((row) => row.category !== "identical"),
+      };
       this.app.runs.update(id, {
         status: "success",
         finishedAt: new Date().toISOString(),
-        files: comparison.rows.length,
+        files: totalFiles,
         // A content difference is a result, not an execution error.
         errors: 0,
         errorMessage: null,
-        params: { input, comparison } satisfies CompareRunParams,
+        params: { input, comparison: persistedComparison } satisfies CompareRunParams,
       });
       this.app.logs.write(
         "info",
