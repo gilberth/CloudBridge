@@ -75,3 +75,101 @@ test("lanza una comparación profunda como ejecución persistente", async ({ pag
     page.getByRole("article").getByText("Comparación profunda src: → dst:"),
   ).toBeVisible();
 });
+
+test("muestra el progreso en vivo de una comparación", async ({ page }) => {
+  await page.addInitScript((run) => {
+    const message = {
+      type: "stats",
+      ts: "2026-09-07T20:00:00.000Z",
+      health: {
+        online: true,
+        version: "v1.75.0",
+        error: null,
+        checkedAt: "2026-09-07T20:00:00.000Z",
+      },
+      global: {
+        bytes: 0,
+        totalBytes: 0,
+        speed: 0,
+        transfers: 0,
+        totalTransfers: 0,
+        checks: 125,
+        totalChecks: 500,
+        checking: ["carpeta/archivo.mov"],
+        errors: 2,
+        fatalError: false,
+        retryError: false,
+        elapsedTime: 90,
+        eta: null,
+        transferring: [],
+      },
+      runs: [
+        {
+          ...run,
+          stats: {
+            bytes: 0,
+            totalBytes: 0,
+            speed: 0,
+            transfers: 0,
+            totalTransfers: 0,
+            checks: 125,
+            totalChecks: 500,
+            checking: ["carpeta/archivo.mov"],
+            errors: 2,
+            fatalError: false,
+            retryError: false,
+            elapsedTime: 90,
+            eta: null,
+            transferring: [],
+          },
+        },
+      ],
+    };
+
+    class FakeWebSocket {
+      static readonly OPEN = 1;
+      readonly OPEN = 1;
+      readyState = 1;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onclose: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor() {
+        setTimeout(() => {
+          this.onopen?.();
+          this.onmessage?.({ data: JSON.stringify(message) });
+        }, 0);
+      }
+
+      close() {}
+    }
+
+    Object.defineProperty(window, "WebSocket", { value: FakeWebSocket });
+  }, comparisonRun);
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route("**/api/health", (route) =>
+    route.fulfill({
+      json: {
+        status: "ok",
+        version: "0.1.0",
+        rclone: {
+          online: true,
+          version: "v1.75.0",
+          error: null,
+          checkedAt: new Date().toISOString(),
+        },
+      },
+    }),
+  );
+  await page.route("**/api/remotes", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/transfers", (route) =>
+    route.fulfill({ json: [comparisonRun] }),
+  );
+
+  await page.goto("/transfers");
+
+  await expect(page.getByText("125 / 500 verificados")).toBeVisible();
+  await expect(page.getByText("Validando carpeta/archivo.mov")).toBeVisible();
+  await expect(page.getByText("2 errores")).toBeVisible();
+});

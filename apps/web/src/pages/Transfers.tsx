@@ -144,6 +144,10 @@ export default function TransfersPage() {
             const percentage =
               stats && stats.totalBytes > 0 ? (stats.bytes / stats.totalBytes) * 100 : 0;
             const isComparison = run.mode === "compare";
+            const checked = stats?.checks ?? 0;
+            const totalChecks = stats?.totalChecks ?? 0;
+            const checkPercentage = totalChecks > 0 ? (checked / totalChecks) * 100 : 0;
+            const checking = stats?.checking ?? [];
 
             return (
               <article key={run.id} className="border-b border-border px-4 py-2.5">
@@ -209,9 +213,37 @@ export default function TransfersPage() {
                 </div>
 
                 {isComparison ? (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    Comparando archivos{run.source ? ` de ${run.source.remote}` : ""}…
-                  </p>
+                  <div className="mt-1.5 space-y-1.5">
+                    <div className="flex items-center gap-3">
+                      <Progress
+                        value={checkPercentage}
+                        indeterminate={totalChecks === 0}
+                        className="flex-1"
+                      />
+                      <span className="w-40 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                        {totalChecks > 0
+                          ? `${checked} / ${totalChecks} verificados`
+                          : `${checked} verificados`}
+                      </span>
+                      <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                        {humanDuration(stats?.elapsedTime ?? 0)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                      <p className="mono min-w-0 flex-1 truncate">
+                        {checking[0]
+                          ? `Validando ${checking[0]}`
+                          : totalChecks === 0
+                            ? "Preparando inventario…"
+                            : "Validando archivos…"}
+                      </p>
+                      {(stats?.errors ?? 0) > 0 && (
+                        <span className="shrink-0 text-destructive">
+                          {stats?.errors} {stats?.errors === 1 ? "error" : "errores"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <div className="mt-1.5 flex items-center gap-3">
                     <Progress value={percentage} className="flex-1" />

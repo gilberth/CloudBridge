@@ -13,7 +13,7 @@ import type {
   RcProviders,
   RcSize,
   RcTransferredItem,
-} from './types.js';
+} from "./types.js";
 
 export interface RcloneClientConfig {
   url: string;
@@ -33,7 +33,7 @@ export class RcloneError extends Error {
     readonly body?: unknown,
   ) {
     super(message);
-    this.name = 'RcloneError';
+    this.name = "RcloneError";
   }
 }
 
@@ -45,7 +45,7 @@ export class RcloneUnavailableError extends Error {
     override readonly cause?: unknown,
   ) {
     super(message);
-    this.name = 'RcloneUnavailableError';
+    this.name = "RcloneUnavailableError";
   }
 }
 
@@ -85,8 +85,8 @@ export class RcloneClient {
   private readonly fetchImpl: typeof fetch;
 
   constructor(config: RcloneClientConfig) {
-    this.url = config.url.replace(/\/+$/, '');
-    this.authHeader = `Basic ${Buffer.from(`${config.user}:${config.password}`).toString('base64')}`;
+    this.url = config.url.replace(/\/+$/, "");
+    this.authHeader = `Basic ${Buffer.from(`${config.user}:${config.password}`).toString("base64")}`;
     this.timeoutMs = config.timeoutMs ?? 30_000;
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch;
   }
@@ -100,31 +100,36 @@ export class RcloneClient {
     const body: Record<string, unknown> = { ...params };
     if (options.async) body._async = true;
     if (options.group) body._group = options.group;
-    if (options.config && Object.keys(options.config).length > 0) body._config = options.config;
-    if (options.filter && Object.keys(options.filter).length > 0) body._filter = options.filter;
+    if (options.config && Object.keys(options.config).length > 0)
+      body._config = options.config;
+    if (options.filter && Object.keys(options.filter).length > 0)
+      body._filter = options.filter;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? this.timeoutMs);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      options.timeoutMs ?? this.timeoutMs,
+    );
     const onAbort = () => controller.abort();
-    options.signal?.addEventListener('abort', onAbort, { once: true });
+    options.signal?.addEventListener("abort", onAbort, { once: true });
 
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.url}/${endpoint}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: this.authHeader },
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: this.authHeader },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
     } catch (cause) {
       const reason =
-        cause instanceof Error && cause.name === 'AbortError'
+        cause instanceof Error && cause.name === "AbortError"
           ? `El daemon rclone no respondió en ${options.timeoutMs ?? this.timeoutMs} ms`
           : `No se pudo contactar con el daemon rclone en ${this.url}`;
       throw new RcloneUnavailableError(endpoint, reason, cause);
     } finally {
       clearTimeout(timeout);
-      options.signal?.removeEventListener('abort', onAbort);
+      options.signal?.removeEventListener("abort", onAbort);
     }
 
     const text = await response.text();
@@ -140,7 +145,12 @@ export class RcloneClient {
         (parsed as { error?: string } | null)?.error ??
         `rclone respondió ${response.status} en ${endpoint}`;
       if (response.status === 401 || response.status === 403) {
-        throw new RcloneError(endpoint, response.status, 'Credenciales de la RC API rechazadas', parsed);
+        throw new RcloneError(
+          endpoint,
+          response.status,
+          "Credenciales de la RC API rechazadas",
+          parsed,
+        );
       }
       throw new RcloneError(endpoint, response.status, message, parsed);
     }
@@ -152,11 +162,14 @@ export class RcloneClient {
   async callAsync(
     endpoint: string,
     params: Record<string, unknown> = {},
-    options: Omit<CallOptions, 'async'> = {},
+    options: Omit<CallOptions, "async"> = {},
   ): Promise<number> {
-    const result = await this.call<RcAsyncResult>(endpoint, params, { ...options, async: true });
-    if (typeof result.jobid !== 'number') {
-      throw new RcloneError(endpoint, 200, 'rclone no devolvió un jobid', result);
+    const result = await this.call<RcAsyncResult>(endpoint, params, {
+      ...options,
+      async: true,
+    });
+    if (typeof result.jobid !== "number") {
+      throw new RcloneError(endpoint, 200, "rclone no devolvió un jobid", result);
     }
     return result.jobid;
   }
@@ -176,7 +189,10 @@ export class RcloneClient {
   async callAsyncAndWait<T>(
     endpoint: string,
     params: Record<string, unknown> = {},
-    options: Omit<CallOptions, 'async'> & { pollIntervalMs?: number; maxWaitMs?: number } = {},
+    options: Omit<CallOptions, "async"> & {
+      pollIntervalMs?: number;
+      maxWaitMs?: number;
+    } = {},
   ): Promise<T> {
     const { pollIntervalMs = 750, maxWaitMs = 10 * 60_000, ...call } = options;
     const jobid = await this.callAsync(endpoint, params, call);
@@ -192,7 +208,11 @@ export class RcloneClient {
       let pollError: unknown;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          status = await this.call<RcJobStatus>('job/status', { jobid }, { timeoutMs: 10_000 });
+          status = await this.call<RcJobStatus>(
+            "job/status",
+            { jobid },
+            { timeoutMs: 10_000 },
+          );
           pollError = undefined;
           break;
         } catch (error) {
@@ -206,7 +226,12 @@ export class RcloneClient {
       }
       if (status.finished) {
         if (!status.success) {
-          throw new RcloneError(endpoint, 200, status.error || `${endpoint} falló en rclone`, status);
+          throw new RcloneError(
+            endpoint,
+            200,
+            status.error || `${endpoint} falló en rclone`,
+            status,
+          );
         }
         return status.output as T;
       }
@@ -224,42 +249,44 @@ export class RcloneClient {
   // ---------------------------------------------------------------- core ---
 
   version(): Promise<RcCoreVersion> {
-    return this.call<RcCoreVersion>('core/version', {}, { timeoutMs: 5000 });
+    return this.call<RcCoreVersion>("core/version", {}, { timeoutMs: 5000 });
   }
 
   stats(group?: string): Promise<RcCoreStats> {
-    return this.call<RcCoreStats>('core/stats', group ? { group } : {}, { timeoutMs: 10_000 });
+    return this.call<RcCoreStats>("core/stats", group ? { group } : {}, {
+      timeoutMs: 10_000,
+    });
   }
 
   async transferred(group?: string): Promise<RcTransferredItem[]> {
     const result = await this.call<{ transferred: RcTransferredItem[] }>(
-      'core/transferred',
+      "core/transferred",
       group ? { group } : {},
     );
     return result.transferred ?? [];
   }
 
   statsReset(group?: string): Promise<unknown> {
-    return this.call('core/stats-reset', group ? { group } : {});
+    return this.call("core/stats-reset", group ? { group } : {});
   }
 
   bwlimit(rate?: string): Promise<{ rate: string; bytesPerSecond: number }> {
-    return this.call('core/bwlimit', rate ? { rate } : {});
+    return this.call("core/bwlimit", rate ? { rate } : {});
   }
 
   // -------------------------------------------------------------- config ---
 
   async listRemotes(): Promise<string[]> {
-    const result = await this.call<{ remotes: string[] }>('config/listremotes');
+    const result = await this.call<{ remotes: string[] }>("config/listremotes");
     return result.remotes ?? [];
   }
 
   configDump(): Promise<Record<string, Record<string, string>>> {
-    return this.call<Record<string, Record<string, string>>>('config/dump');
+    return this.call<Record<string, Record<string, string>>>("config/dump");
   }
 
   configGet(name: string): Promise<Record<string, string>> {
-    return this.call<Record<string, string>>('config/get', { name });
+    return this.call<Record<string, string>>("config/get", { name });
   }
 
   configCreate(
@@ -268,7 +295,7 @@ export class RcloneClient {
     parameters: Record<string, string>,
     options: { secretsAlreadyObscured?: boolean } = {},
   ): Promise<RcConfigResult> {
-    return this.call<RcConfigResult>('config/create', {
+    return this.call<RcConfigResult>("config/create", {
       name,
       type,
       parameters,
@@ -283,7 +310,7 @@ export class RcloneClient {
     parameters: Record<string, string>,
     options: { secretsAlreadyObscured?: boolean } = {},
   ): Promise<RcConfigResult> {
-    return this.call<RcConfigResult>('config/update', {
+    return this.call<RcConfigResult>("config/update", {
       name,
       parameters,
       opt: options.secretsAlreadyObscured
@@ -293,7 +320,7 @@ export class RcloneClient {
   }
 
   configContinue(
-    operation: 'create' | 'update',
+    operation: "create" | "update",
     name: string,
     type: string,
     state: string,
@@ -302,7 +329,7 @@ export class RcloneClient {
   ): Promise<RcConfigResult> {
     return this.call<RcConfigResult>(`config/${operation}`, {
       name,
-      ...(operation === 'create' ? { type } : {}),
+      ...(operation === "create" ? { type } : {}),
       parameters,
       opt: {
         nonInteractive: true,
@@ -314,11 +341,11 @@ export class RcloneClient {
   }
 
   configDelete(name: string): Promise<unknown> {
-    return this.call('config/delete', { name });
+    return this.call("config/delete", { name });
   }
 
   providers(): Promise<RcProviders> {
-    return this.call<RcProviders>('config/providers');
+    return this.call<RcProviders>("config/providers");
   }
 
   // ---------------------------------------------------------- operations ---
@@ -334,7 +361,7 @@ export class RcloneClient {
     // than a hard failure.
     try {
       const result = await this.callAsyncAndWait<RcListResult>(
-        'operations/list',
+        "operations/list",
         { fs, remote, opt },
         { maxWaitMs: 10 * 60_000 },
       );
@@ -342,10 +369,10 @@ export class RcloneClient {
     } catch (error) {
       if (error instanceof RcloneUnavailableError) {
         throw new RcloneUnavailableError(
-          'operations/list',
+          "operations/list",
           `${error.message}. Si es un remoto de Google Drive, revisa si la carpeta tiene muchos ` +
             'shortcuts (sobre todo "dangling"): resolverlos puede ser muy lento. Prueba activando ' +
-            'skip_dangling_shortcuts (u skip_shortcuts) en las opciones avanzadas del remoto.',
+            "skip_dangling_shortcuts (u skip_shortcuts) en las opciones avanzadas del remoto.",
           error.cause,
         );
       }
@@ -354,31 +381,31 @@ export class RcloneClient {
   }
 
   about(fs: string): Promise<RcAbout> {
-    return this.call<RcAbout>('operations/about', { fs });
+    return this.call<RcAbout>("operations/about", { fs });
   }
 
   fsInfo(fs: string): Promise<RcFsInfo> {
-    return this.call<RcFsInfo>('operations/fsinfo', { fs });
+    return this.call<RcFsInfo>("operations/fsinfo", { fs });
   }
 
   size(fs: string): Promise<RcSize> {
-    return this.call<RcSize>('operations/size', { fs }, { timeoutMs: 120_000 });
+    return this.call<RcSize>("operations/size", { fs }, { timeoutMs: 120_000 });
   }
 
   stat(fs: string, remote: string): Promise<{ item: RcListItem | null }> {
-    return this.call<{ item: RcListItem | null }>('operations/stat', { fs, remote });
+    return this.call<{ item: RcListItem | null }>("operations/stat", { fs, remote });
   }
 
   mkdir(fs: string, remote: string): Promise<unknown> {
-    return this.call('operations/mkdir', { fs, remote });
+    return this.call("operations/mkdir", { fs, remote });
   }
 
   deleteFile(fs: string, remote: string): Promise<unknown> {
-    return this.call('operations/deletefile', { fs, remote });
+    return this.call("operations/deletefile", { fs, remote });
   }
 
   purge(fs: string, remote: string): Promise<unknown> {
-    return this.call('operations/purge', { fs, remote });
+    return this.call("operations/purge", { fs, remote });
   }
 
   copyFile(
@@ -388,7 +415,11 @@ export class RcloneClient {
     dstRemote: string,
     options: CallOptions = {},
   ): Promise<number> {
-    return this.callAsync('operations/copyfile', { srcFs, srcRemote, dstFs, dstRemote }, options);
+    return this.callAsync(
+      "operations/copyfile",
+      { srcFs, srcRemote, dstFs, dstRemote },
+      options,
+    );
   }
 
   moveFile(
@@ -398,22 +429,27 @@ export class RcloneClient {
     dstRemote: string,
     options: CallOptions = {},
   ): Promise<number> {
-    return this.callAsync('operations/movefile', { srcFs, srcRemote, dstFs, dstRemote }, options);
+    return this.callAsync(
+      "operations/movefile",
+      { srcFs, srcRemote, dstFs, dstRemote },
+      options,
+    );
   }
 
   publicLink(fs: string, remote: string): Promise<{ url: string }> {
-    return this.call<{ url: string }>('operations/publiclink', { fs, remote });
+    return this.call<{ url: string }>("operations/publiclink", { fs, remote });
   }
 
   check(
     srcFs: string,
     dstFs: string,
     params: { download?: boolean; oneWay?: boolean; checkFileHash?: string } = {},
+    options: Pick<CallOptions, "group"> = {},
   ): Promise<RcCheckResult> {
     // Hash checks can traverse millions of remote objects. Run the RC call as
     // a job and poll it, otherwise one HTTP request is cut off after 5 min.
     return this.callAsyncAndWait<RcCheckResult>(
-      'operations/check',
+      "operations/check",
       {
         srcFs,
         dstFs,
@@ -425,33 +461,44 @@ export class RcloneClient {
         error: true,
         ...params,
       },
-      { maxWaitMs: 60 * 60_000 },
+      { maxWaitMs: 60 * 60_000, ...options },
     );
   }
 
   // ---------------------------------------------------------------- sync ---
 
-  syncCopy(srcFs: string, dstFs: string, options: CallOptions & { createEmptySrcDirs?: boolean } = {}) {
+  syncCopy(
+    srcFs: string,
+    dstFs: string,
+    options: CallOptions & { createEmptySrcDirs?: boolean } = {},
+  ) {
     const { createEmptySrcDirs, ...call } = options;
-    return this.callAsync('sync/copy', { srcFs, dstFs, createEmptySrcDirs }, call);
+    return this.callAsync("sync/copy", { srcFs, dstFs, createEmptySrcDirs }, call);
   }
 
   syncMove(
     srcFs: string,
     dstFs: string,
-    options: CallOptions & { createEmptySrcDirs?: boolean; deleteEmptySrcDirs?: boolean } = {},
+    options: CallOptions & {
+      createEmptySrcDirs?: boolean;
+      deleteEmptySrcDirs?: boolean;
+    } = {},
   ) {
     const { createEmptySrcDirs, deleteEmptySrcDirs, ...call } = options;
     return this.callAsync(
-      'sync/move',
+      "sync/move",
       { srcFs, dstFs, createEmptySrcDirs, deleteEmptySrcDirs },
       call,
     );
   }
 
-  syncSync(srcFs: string, dstFs: string, options: CallOptions & { createEmptySrcDirs?: boolean } = {}) {
+  syncSync(
+    srcFs: string,
+    dstFs: string,
+    options: CallOptions & { createEmptySrcDirs?: boolean } = {},
+  ) {
     const { createEmptySrcDirs, ...call } = options;
-    return this.callAsync('sync/sync', { srcFs, dstFs, createEmptySrcDirs }, call);
+    return this.callAsync("sync/sync", { srcFs, dstFs, createEmptySrcDirs }, call);
   }
 
   bisync(
@@ -460,24 +507,24 @@ export class RcloneClient {
     options: CallOptions & { dryRun?: boolean; resync?: boolean } = {},
   ) {
     const { dryRun, resync, ...call } = options;
-    return this.callAsync('sync/bisync', { path1, path2, dryRun, resync }, call);
+    return this.callAsync("sync/bisync", { path1, path2, dryRun, resync }, call);
   }
 
   // ----------------------------------------------------------------- job ---
 
   jobStatus(jobid: number): Promise<RcJobStatus> {
-    return this.call<RcJobStatus>('job/status', { jobid });
+    return this.call<RcJobStatus>("job/status", { jobid });
   }
 
   jobStop(jobid: number): Promise<unknown> {
-    return this.call('job/stop', { jobid });
+    return this.call("job/stop", { jobid });
   }
 
   jobStopGroup(group: string): Promise<unknown> {
-    return this.call('job/stopgroup', { group });
+    return this.call("job/stopgroup", { group });
   }
 
   jobList(): Promise<RcJobList> {
-    return this.call<RcJobList>('job/list');
+    return this.call<RcJobList>("job/list");
   }
 }

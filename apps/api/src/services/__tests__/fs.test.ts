@@ -76,7 +76,9 @@ describe("FsService.compare", () => {
       deep: true,
     });
 
-    const result = await new FsService(app).compare(input);
+    const result = await new FsService(app).compare(input, {
+      group: "run:compare-1",
+    });
 
     expect(result.counts).toEqual({
       onlySrc: 1,
@@ -91,5 +93,11 @@ describe("FsService.compare", () => {
       { name: "igual.txt", isDir: false, category: "identical" },
       { name: "ilegible.txt", isDir: false, category: "differ" },
     ]);
+    expect(app.rclone.check).toHaveBeenCalledWith(
+      "origen:documentos",
+      "destino:respaldo",
+      { download: false },
+      { group: "run:compare-1" },
+    );
   });
 });
