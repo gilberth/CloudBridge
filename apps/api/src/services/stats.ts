@@ -1,15 +1,15 @@
-import type { FastifyInstance } from 'fastify';
-import type { WebSocket } from '@fastify/websocket';
+import type { FastifyInstance } from "fastify";
+import type { WebSocket } from "@fastify/websocket";
 import type {
   RcloneHealth,
   Run,
   RunWithStats,
   StatsSnapshot,
   WsServerMessage,
-} from '@cloudbridge/shared';
-import { EMPTY_STATS } from '@cloudbridge/shared';
-import type { RcCoreStats } from '../rclone/types.js';
-import { RcloneError, RcloneUnavailableError } from '../rclone/client.js';
+} from "@cloudbridge/shared";
+import { EMPTY_STATS } from "@cloudbridge/shared";
+import type { RcCoreStats } from "../rclone/types.js";
+import { RcloneError, RcloneUnavailableError } from "../rclone/client.js";
 
 /**
  * Single ticker that polls rclone, finalises finished runs and pushes a
@@ -50,9 +50,13 @@ export class StatsBroadcaster {
 
   add(socket: WebSocket): void {
     this.clients.add(socket);
-    this.send(socket, { type: 'hello', ts: new Date().toISOString(), interval: this.intervalMs });
-    socket.on('close', () => this.clients.delete(socket));
-    socket.on('error', () => this.clients.delete(socket));
+    this.send(socket, {
+      type: "hello",
+      ts: new Date().toISOString(),
+      interval: this.intervalMs,
+    });
+    socket.on("close", () => this.clients.delete(socket));
+    socket.on("error", () => this.clients.delete(socket));
   }
 
   get clientCount(): number {
@@ -60,7 +64,7 @@ export class StatsBroadcaster {
   }
 
   emitRunFinished(run: Run): void {
-    this.broadcast({ type: 'run:finished', ts: new Date().toISOString(), run });
+    this.broadcast({ type: "run:finished", ts: new Date().toISOString(), run });
   }
 
   private send(socket: WebSocket, message: WsServerMessage): void {
@@ -86,6 +90,7 @@ export class StatsBroadcaster {
       totalTransfers: stats.totalTransfers ?? 0,
       checks: stats.checks ?? 0,
       totalChecks: stats.totalChecks ?? 0,
+      checking: stats.checking ?? [],
       errors: stats.errors ?? 0,
       fatalError: Boolean(stats.fatalError),
       retryError: Boolean(stats.retryError),
@@ -125,7 +130,7 @@ export class StatsBroadcaster {
         error:
           error instanceof RcloneError || error instanceof RcloneUnavailableError
             ? error.message
-            : 'El daemon rclone no responde',
+            : "El daemon rclone no responde",
         checkedAt: new Date().toISOString(),
       };
     }
@@ -133,7 +138,7 @@ export class StatsBroadcaster {
   }
 
   private async tick(): Promise<void> {
-    const active = this.app.runs.active().filter((run) => run.status === 'running');
+    const active = this.app.runs.active().filter((run) => run.status === "running");
 
     // Nothing running and nobody watching: skip the round trip entirely.
     if (active.length === 0 && this.clients.size === 0) return;
@@ -141,7 +146,7 @@ export class StatsBroadcaster {
     try {
       await this.app.transfers.reconcile();
     } catch (error) {
-      this.app.log.warn({ err: error }, 'Fallo reconciliando ejecuciones');
+      this.app.log.warn({ err: error }, "Fallo reconciliando ejecuciones");
     }
 
     if (this.clients.size === 0) return;
@@ -149,7 +154,7 @@ export class StatsBroadcaster {
     const health = await this.probeHealth();
     if (!health.online) {
       this.broadcast({
-        type: 'stats',
+        type: "stats",
         ts: new Date().toISOString(),
         health,
         global: EMPTY_STATS,
@@ -170,7 +175,7 @@ export class StatsBroadcaster {
     }));
 
     this.broadcast({
-      type: 'stats',
+      type: "stats",
       ts: new Date().toISOString(),
       health,
       global: this.toSnapshot(globalStats),

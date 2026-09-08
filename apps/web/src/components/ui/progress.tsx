@@ -1,12 +1,14 @@
-import { cn } from '@/lib/utils';
+import { cn } from "@/lib/utils";
 
 /** Slim determinate progress bar used in the transfers table. */
 export function Progress({
   value,
+  indeterminate = false,
   className,
   barClassName,
 }: {
   value: number;
+  indeterminate?: boolean;
   className?: string;
   barClassName?: string;
 }) {
@@ -14,14 +16,18 @@ export function Progress({
   return (
     <div
       role="progressbar"
-      aria-valuenow={Math.round(pct)}
+      aria-valuenow={indeterminate ? undefined : Math.round(pct)}
       aria-valuemin={0}
       aria-valuemax={100}
-      className={cn('h-1.5 w-full overflow-hidden rounded-full bg-muted', className)}
+      className={cn("h-1.5 w-full overflow-hidden rounded-full bg-muted", className)}
     >
       <div
-        className={cn('h-full rounded-full bg-primary transition-[width] duration-300', barClassName)}
-        style={{ width: `${pct}%` }}
+        className={cn(
+          "h-full rounded-full bg-primary transition-[width] duration-300",
+          indeterminate && "animate-pulse opacity-60",
+          barClassName,
+        )}
+        style={{ width: indeterminate ? "35%" : `${pct}%` }}
       />
     </div>
   );

@@ -25,6 +25,8 @@ export interface StatsSnapshot {
   totalTransfers: number;
   checks: number;
   totalChecks: number;
+  /** Paths currently being validated by rclone. */
+  checking: string[];
   errors: number;
   fatalError: boolean;
   retryError: boolean;
@@ -41,6 +43,7 @@ export const EMPTY_STATS: StatsSnapshot = {
   totalTransfers: 0,
   checks: 0,
   totalChecks: 0,
+  checking: [],
   errors: 0,
   fatalError: false,
   retryError: false,

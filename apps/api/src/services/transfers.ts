@@ -227,7 +227,7 @@ export class TransferService {
     label: string,
   ): Promise<void> {
     try {
-      const comparison = await this.app.fs.compare(input);
+      const comparison = await this.app.fs.compare(input, { group: `run:${id}` });
       const differences =
         comparison.counts.onlySrc + comparison.counts.onlyDst + comparison.counts.differ;
       const totalFiles = Object.values(comparison.counts).reduce(

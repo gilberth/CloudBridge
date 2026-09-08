@@ -63,6 +63,7 @@ describe("TransferService", () => {
     expect(app.runs.create).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "compare", source: input.source }),
     );
+    expect(app.fs.compare).toHaveBeenCalledWith(input, { group: run.group });
     await vi.waitFor(() =>
       expect(update).toHaveBeenCalledWith(
         run.id,

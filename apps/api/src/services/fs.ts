@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance } from "fastify";
 import type {
   CompareCategory,
   CompareResult,
@@ -7,8 +7,8 @@ import type {
   FsEntry,
   FsListing,
   SizeResult,
-} from '@cloudbridge/shared';
-import { badRequest, notFound } from '../lib/errors.js';
+} from "@cloudbridge/shared";
+import { badRequest, notFound } from "../lib/errors.js";
 import {
   baseName,
   isRootPath,
@@ -17,13 +17,17 @@ import {
   sanitizeName,
   sanitizePath,
   sanitizeRemoteName,
-} from '../lib/path.js';
-import { fsAndRemote, fsPath } from '../rclone/fsstring.js';
-import type { RcListItem } from '../rclone/types.js';
+} from "../lib/path.js";
+import { fsAndRemote, fsPath } from "../rclone/fsstring.js";
+import type { RcListItem } from "../rclone/types.js";
 
 export interface DeleteEntry {
   path: string;
   isDir: boolean;
+}
+
+interface CompareOptions {
+  group?: string;
 }
 
 /** File-system operations on top of the rclone `operations/*` endpoints. */
@@ -47,7 +51,7 @@ export class FsService {
       path: item.Path,
       name: item.Name,
       size: item.IsDir ? -1 : item.Size,
-      mimeType: item.MimeType ?? '',
+      mimeType: item.MimeType ?? "",
       modTime: item.ModTime,
       isDir: item.IsDir,
       ...(item.Hashes ? { hashes: item.Hashes } : {}),
@@ -60,12 +64,17 @@ export class FsService {
     // The full path goes in `fs` with an empty `remote`: `local` remotes resolve
     // a bare `disco:` against rclone's working directory, so splitting the path
     // between the two arguments only works for backends with a fixed root.
-    const items = await this.rclone.list(fsPath(name, clean), '', { recurse, noMimeType: false });
-
-    const entries = items.map((item) => this.normalise(item)).sort((a, b) => {
-      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-      return a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' });
+    const items = await this.rclone.list(fsPath(name, clean), "", {
+      recurse,
+      noMimeType: false,
     });
+
+    const entries = items
+      .map((item) => this.normalise(item))
+      .sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name, "es", { numeric: true, sensitivity: "base" });
+      });
 
     return { remote: name, path: clean, entries };
   }
@@ -73,7 +82,7 @@ export class FsService {
   async mkdir(remote: string, path: string): Promise<void> {
     const name = await this.assertRemote(remote);
     const clean = sanitizePath(path);
-    if (isRootPath(clean)) throw badRequest('Falta la ruta de la carpeta');
+    if (isRootPath(clean)) throw badRequest("Falta la ruta de la carpeta");
     const { fs, remote: leaf } = fsAndRemote(name, clean);
     await this.rclone.mkdir(fs, leaf);
   }
@@ -82,7 +91,7 @@ export class FsService {
     const name = await this.assertRemote(remote);
     for (const entry of entries) {
       const clean = sanitizePath(entry.path);
-      if (isRootPath(clean)) throw badRequest('No se puede borrar la raíz del remoto');
+      if (isRootPath(clean)) throw badRequest("No se puede borrar la raíz del remoto");
       const { fs, remote: leaf } = fsAndRemote(name, clean);
       if (entry.isDir) {
         await this.rclone.purge(fs, leaf);
@@ -102,15 +111,19 @@ export class FsService {
     const source = sanitizePath(from);
     const target = sanitizePath(to);
     if (isRootPath(source) || isRootPath(target)) {
-      throw badRequest('No se puede renombrar la raíz del remoto');
+      throw badRequest("No se puede renombrar la raíz del remoto");
     }
     if (source === target) return;
 
     if (isDir) {
-      const jobId = await this.rclone.syncMove(fsPath(name, source), fsPath(name, target), {
-        createEmptySrcDirs: false,
-        deleteEmptySrcDirs: true,
-      });
+      const jobId = await this.rclone.syncMove(
+        fsPath(name, source),
+        fsPath(name, target),
+        {
+          createEmptySrcDirs: false,
+          deleteEmptySrcDirs: true,
+        },
+      );
       await this.waitForJob(jobId);
       return;
     }
@@ -122,7 +135,12 @@ export class FsService {
   }
 
   /** Rename an entry in place, keeping it in the same directory. */
-  renameInPlace(remote: string, path: string, newName: string, isDir: boolean): Promise<void> {
+  renameInPlace(
+    remote: string,
+    path: string,
+    newName: string,
+    isDir: boolean,
+  ): Promise<void> {
     const clean = sanitizePath(path);
     const target = joinPath(parentPath(clean), sanitizeName(newName));
     return this.rename(remote, clean, target, isDir);
@@ -142,8 +160,11 @@ export class FsService {
    * to `operations/check`, avoiding two redundant full-tree listings while
    * comparing hashes (or, with `download`, the bytes themselves).
    */
-  async compare(input: FsCompareInput): Promise<CompareResult> {
-    if (input.deep && input.recurse) return this.compareDeep(input);
+  async compare(
+    input: FsCompareInput,
+    options: CompareOptions = {},
+  ): Promise<CompareResult> {
+    if (input.deep && input.recurse) return this.compareDeep(input, options);
 
     const [source, destination] = await Promise.all([
       this.list(input.source.remote, input.source.path, input.recurse),
@@ -167,13 +188,13 @@ export class FsService {
     for (const [path, pair] of byPath) {
       const entry = pair.src ?? pair.dst!;
       let category: CompareCategory;
-      if (pair.src && !pair.dst) category = 'onlySrc';
-      else if (!pair.src && pair.dst) category = 'onlyDst';
-      else if (entry.isDir) category = 'identical';
-      else category = this.sameContent(pair.src!, pair.dst!) ? 'identical' : 'differ';
+      if (pair.src && !pair.dst) category = "onlySrc";
+      else if (!pair.src && pair.dst) category = "onlyDst";
+      else if (entry.isDir) category = "identical";
+      else category = this.sameContent(pair.src!, pair.dst!) ? "identical" : "differ";
 
       const hashMismatch = differing.has(path);
-      if (hashMismatch && category === 'identical') category = 'differ';
+      if (hashMismatch && category === "identical") category = "differ";
 
       rows.push({
         name: entry.name,
@@ -187,7 +208,7 @@ export class FsService {
 
     rows.sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-      return a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' });
+      return a.name.localeCompare(b.name, "es", { numeric: true, sensitivity: "base" });
     });
 
     const counts: Record<CompareCategory, number> = {
@@ -208,7 +229,10 @@ export class FsService {
   }
 
   /** Build a recursive deep result from rclone's own report without listing both trees first. */
-  private async compareDeep(input: FsCompareInput): Promise<CompareResult> {
+  private async compareDeep(
+    input: FsCompareInput,
+    options: CompareOptions,
+  ): Promise<CompareResult> {
     const [sourceRemote, destinationRemote] = await Promise.all([
       this.assertRemote(input.source.remote),
       this.assertRemote(input.destination.remote),
@@ -222,6 +246,7 @@ export class FsService {
       fsPath(source.remote, source.path),
       fsPath(destination.remote, destination.path),
       { download: input.download },
+      options,
     );
     const byPath = new Map<string, CompareRow>();
     const add = (
@@ -240,14 +265,14 @@ export class FsService {
       }
     };
 
-    add(report.match, 'identical');
-    add(report.missingOnDst, 'onlySrc');
-    add(report.missingOnSrc, 'onlyDst');
-    add(report.differ, 'differ', true);
-    add(report.error, 'differ');
+    add(report.match, "identical");
+    add(report.missingOnDst, "onlySrc");
+    add(report.missingOnSrc, "onlyDst");
+    add(report.differ, "differ", true);
+    add(report.error, "differ");
 
     const rows = [...byPath.values()].sort((a, b) =>
-      a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }),
+      a.name.localeCompare(b.name, "es", { numeric: true, sensitivity: "base" }),
     );
     const counts: Record<CompareCategory, number> = {
       onlySrc: 0,
@@ -286,12 +311,13 @@ export class FsService {
     while (Date.now() < deadline) {
       const status = await this.rclone.jobStatus(jobId);
       if (status.finished) {
-        if (!status.success) throw badRequest(status.error || 'La operación falló en rclone');
+        if (!status.success)
+          throw badRequest(status.error || "La operación falló en rclone");
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    throw badRequest('La operación tardó demasiado; sigue en curso en rclone');
+    throw badRequest("La operación tardó demasiado; sigue en curso en rclone");
   }
 
   /**
@@ -301,27 +327,32 @@ export class FsService {
   async download(
     remote: string,
     path: string,
-  ): Promise<{ body: ReadableStream<Uint8Array>; contentType: string; contentLength: string | null; filename: string }> {
+  ): Promise<{
+    body: ReadableStream<Uint8Array>;
+    contentType: string;
+    contentLength: string | null;
+    filename: string;
+  }> {
     const name = await this.assertRemote(remote);
     const clean = sanitizePath(path);
-    if (isRootPath(clean)) throw badRequest('Falta la ruta del archivo');
+    if (isRootPath(clean)) throw badRequest("Falta la ruta del archivo");
 
     const connection = this.app.settings.connection();
     const { fs, remote: leaf } = fsAndRemote(name, clean);
 
     // `--rc-serve` exposes objects at /[<fs>]/<object>, with the brackets and the
     // remote's colon written literally. Only the individual segments are encoded.
-    const [prefix, ...rest] = fs.split(':');
+    const [prefix, ...rest] = fs.split(":");
     const directory = rest
-      .join(':')
-      .split('/')
+      .join(":")
+      .split("/")
       .map((segment) => encodeURIComponent(segment))
-      .join('/');
-    const url = `${connection.url.replace(/\/+$/, '')}/[${encodeURIComponent(prefix ?? name)}:${directory}]/${encodeURIComponent(leaf)}`;
+      .join("/");
+    const url = `${connection.url.replace(/\/+$/, "")}/[${encodeURIComponent(prefix ?? name)}:${directory}]/${encodeURIComponent(leaf)}`;
 
     const response = await fetch(url, {
       headers: {
-        authorization: `Basic ${Buffer.from(`${connection.user}:${connection.password}`).toString('base64')}`,
+        authorization: `Basic ${Buffer.from(`${connection.user}:${connection.password}`).toString("base64")}`,
       },
     });
 
@@ -331,8 +362,8 @@ export class FsService {
 
     return {
       body: response.body,
-      contentType: response.headers.get('content-type') ?? 'application/octet-stream',
-      contentLength: response.headers.get('content-length'),
+      contentType: response.headers.get("content-type") ?? "application/octet-stream",
+      contentLength: response.headers.get("content-length"),
       filename: baseName(clean),
     };
   }
