@@ -138,12 +138,13 @@ export class FsService {
    * categories, which the Explorer renders as colours.
    *
    * The default pass diffs two `operations/list` results by name, size and
-   * modification time — it is fast and gives the UI per-row metadata. The deep
-   * pass additionally runs `operations/check`, which compares hashes (and with
-   * `download` set, the bytes themselves) and can therefore catch a file that
-   * has the same size and timestamp but different content.
+   * modification time. A recursive deep pass delegates the complete traversal
+   * to `operations/check`, avoiding two redundant full-tree listings while
+   * comparing hashes (or, with `download`, the bytes themselves).
    */
   async compare(input: FsCompareInput): Promise<CompareResult> {
+    if (input.deep && input.recurse) return this.compareDeep(input);
+
     const [source, destination] = await Promise.all([
       this.list(input.source.remote, input.source.path, input.recurse),
       this.list(input.destination.remote, input.destination.path, input.recurse),
@@ -204,6 +205,59 @@ export class FsService {
       rows,
       counts,
     };
+  }
+
+  /** Build a recursive deep result from rclone's own report without listing both trees first. */
+  private async compareDeep(input: FsCompareInput): Promise<CompareResult> {
+    const [sourceRemote, destinationRemote] = await Promise.all([
+      this.assertRemote(input.source.remote),
+      this.assertRemote(input.destination.remote),
+    ]);
+    const source = { remote: sourceRemote, path: sanitizePath(input.source.path) };
+    const destination = {
+      remote: destinationRemote,
+      path: sanitizePath(input.destination.path),
+    };
+    const report = await this.rclone.check(
+      fsPath(source.remote, source.path),
+      fsPath(destination.remote, destination.path),
+      { download: input.download },
+    );
+    const byPath = new Map<string, CompareRow>();
+    const add = (
+      paths: string[] | undefined,
+      category: CompareCategory,
+      hashMismatch = false,
+    ) => {
+      for (const path of paths ?? []) {
+        if (!path) continue;
+        byPath.set(path, {
+          name: path,
+          isDir: false,
+          category,
+          ...(hashMismatch ? { hashMismatch: true } : {}),
+        });
+      }
+    };
+
+    add(report.match, 'identical');
+    add(report.missingOnDst, 'onlySrc');
+    add(report.missingOnSrc, 'onlyDst');
+    add(report.differ, 'differ', true);
+    add(report.error, 'differ');
+
+    const rows = [...byPath.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }),
+    );
+    const counts: Record<CompareCategory, number> = {
+      onlySrc: 0,
+      onlyDst: 0,
+      differ: 0,
+      identical: 0,
+    };
+    for (const row of rows) counts[row.category] += 1;
+
+    return { source, destination, deep: true, rows, counts };
   }
 
   /** Same size and same modification time (to the second). */
